@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CAS program viewer
 
-## Getting Started
+Next.js app for publishing **CAS Excel exports** (`.xlsx`) to a **read-only public page** with program search, a default program, and admin-controlled **summary columns**. Intended for data that may be fully public (no per-viewer login).
 
-First, run the development server:
+Remote repo: [github.com/gcrouch-wsu/CAS](https://github.com/gcrouch-wsu/CAS).
+
+> **Note:** The local folder created by `create-next-app` is `cas` (npm package naming). Clone the GitHub repo as `CAS` or any name you prefer; point Vercel at that directory.
+
+## Requirements
+
+- Node 20+
+- Postgres database
+- Environment variables (see `.env.example`)
+
+## Database
+
+Run the migration SQL against your database (once):
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+psql "$DATABASE_URL" -f supabase/migrations/001_cas_publications.sql
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Or paste the file contents into the SQL editor in Neon / Supabase / Vercel Postgres.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Local development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env.local
+# edit DATABASE_URL and ADMIN_SECRET
 
-## Learn More
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+- Home: [http://localhost:3000](http://localhost:3000)
+- Admin upload: [http://localhost:3000/admin](http://localhost:3000/admin)
+- Public view: `http://localhost:3000/s/<slug>` (slug returned after upload)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Vercel
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Create a Postgres database (or use Neon) and run `001_cas_publications.sql`.
+2. Create a Vercel project from this repo / directory.
+3. Set `DATABASE_URL` and `ADMIN_SECRET` in Project → Settings → Environment Variables.
+4. Deploy.
 
-## Deploy on Vercel
+## How it works
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Admin** posts a CAS `.xlsx` with `Authorization: Bearer <ADMIN_SECRET>` (the web UI at `/admin` does this).
+2. The server parses **Program Attributes**, **Recommendations**, **Questions**, **Answers**, **Documents**, **Org Questions**, **Org Answers** (missing sheets are OK).
+3. Rows are **grouped** by a stable key (`WebAdMIT Label`, else `ProgramCode` / `Program Code`, else `Unique ID`, else organization + program + cycle). Within a group, **shared** fields become the summary; **term lines** list each application window (term + open / deadlines).
+4. You choose **which summary columns** appear on the public page; questions / documents / answers / recommendations still show in full for the selected program group.
+5. **Public** page `/s/[slug]` loads data from Postgres (no auth). `robots` is set to **noindex** to avoid search indexing of unlisted links (adjust if you want discoverability).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Security note
+
+`ADMIN_SECRET` gates uploads and column changes. Anyone with the secret can publish. Anyone with a public URL can read that publication. Rotate the secret if it leaks.
+
+## CAS parser dependency
+
+The app uses the [`xlsx`](https://www.npmjs.com/package/xlsx) package for parsing. Only **trusted** CAS files should be uploaded (admin-only). Review `npm audit` if you plan to accept untrusted spreadsheets.

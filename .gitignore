@@ -24,18 +24,23 @@
 .DS_Store
 *.pem
 
+# CAS / Excel exports (do not commit workbooks)
+*.xlsx
+*.xls
+~$*
+
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files
+.env*.local
+.env
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
