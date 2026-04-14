@@ -1,17 +1,27 @@
-/** Parsed CAS workbook stored as JSON (Postgres JSONB). */
+/** Columns often duplicated from Program Attributes; hide by default on detail tables. */
+export const REDUNDANT_DETAIL_COLUMN_KEYS = new Set(
+  ["cycle", "organization", "program", "program id"].map((s) => s.toLowerCase())
+);
+
+export interface TermFieldSetting {
+  key: string;
+  label: string;
+  visible: boolean;
+}
 
 export interface CasOffering {
   programId: string;
-  /** Human-readable line for this application window (term + dates). */
+  /** Legacy single-line summary (still stored for exports). */
   termLine: string;
   /** Columns that differ within the program group (raw values). */
   varying: Record<string, string>;
+  /** Ordered term / date fields for public bullets (from Program Attributes row). */
+  termParts: { key: string; value: string }[];
 }
 
 export interface CasProgramGroup {
   groupKey: string;
   displayName: string;
-  /** Fields identical for every Program Attributes row in this group. */
   shared: Record<string, string>;
   offerings: CasOffering[];
   recommendations: Record<string, string> | null;
@@ -26,8 +36,11 @@ export interface CasPublicationData {
   orgQuestions: Record<string, string>[];
   orgAnswers: Record<string, string>[];
   groups: CasProgramGroup[];
-  /** Union of keys suitable for the summary strip (shared fields across groups). */
   summaryColumnOptions: string[];
+  /** Union of column keys appearing in program Questions (for admin picker). */
+  questionColumnOptions: string[];
+  answerColumnOptions: string[];
+  documentColumnOptions: string[];
 }
 
 export interface PublicPublicationPayload {
@@ -35,8 +48,12 @@ export interface PublicPublicationPayload {
   slug: string;
   defaultGroupKey: string;
   visibleColumnKeys: string[];
-  /** When false, org-level questions/answers are omitted from the public page. */
   showOrgContent: boolean;
+  termFieldSettings: TermFieldSetting[];
+  /** Ordered keys for program question table columns on the public page. */
+  visibleQuestionColumnKeys: string[];
+  visibleAnswerColumnKeys: string[];
+  visibleDocumentColumnKeys: string[];
   orgQuestions: Record<string, string>[];
   orgAnswers: Record<string, string>[];
   groups: PublicProgramGroup[];

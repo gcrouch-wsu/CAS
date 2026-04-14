@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { PublicProgramGroup, PublicPublicationPayload } from "@/lib/types";
+import type {
+  CasOffering,
+  PublicProgramGroup,
+  PublicPublicationPayload,
+  TermFieldSetting,
+} from "@/lib/types";
 
 function pickGroup(
   groups: PublicProgramGroup[],
@@ -94,7 +99,13 @@ export default function PublicCasView({
           No programs match that search.
         </p>
       ) : selected ? (
-        <ProgramDetail group={selected} />
+        <ProgramDetail
+          group={selected}
+          termFieldSettings={initial.termFieldSettings}
+          questionColumns={initial.visibleQuestionColumnKeys}
+          answerColumns={initial.visibleAnswerColumnKeys}
+          documentColumns={initial.visibleDocumentColumnKeys}
+        />
       ) : null}
 
       {showOrg && (
@@ -134,7 +145,36 @@ function sectionTitle(text: string) {
   );
 }
 
-function ProgramDetail({ group }: { group: PublicProgramGroup }) {
+function termSettingMap(settings: TermFieldSetting[]): Map<string, TermFieldSetting> {
+  return new Map(settings.map((s) => [s.key, s]));
+}
+
+function visibleTermBullets(o: CasOffering, settings: TermFieldSetting[]) {
+  const map = termSettingMap(settings);
+  return o.termParts
+    .map((p) => {
+      const s = map.get(p.key);
+      const visible = s ? s.visible : true;
+      if (!visible) return null;
+      const label = (s?.label ?? p.key).trim() || p.key;
+      return { label, value: p.value };
+    })
+    .filter((x): x is { label: string; value: string } => x !== null);
+}
+
+function ProgramDetail({
+  group,
+  termFieldSettings,
+  questionColumns,
+  answerColumns,
+  documentColumns,
+}: {
+  group: PublicProgramGroup;
+  termFieldSettings: TermFieldSetting[];
+  questionColumns: string[];
+  answerColumns: string[];
+  documentColumns: string[];
+}) {
   return (
     <article className="space-y-10 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
       <div>
@@ -162,16 +202,30 @@ function ProgramDetail({ group }: { group: PublicProgramGroup }) {
       {group.offerings.length > 0 && (
         <section className="space-y-3">
           {sectionTitle("Application windows")}
-          <ul className="space-y-2 text-sm text-wsu-gray-dark">
-            {group.offerings.map((o) => (
-              <li
-                key={o.programId}
-                className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-wsu-gray/10 bg-wsu-cream/30 px-3 py-2"
-              >
-                <span className="font-medium">{o.termLine}</span>
-                <span className="text-xs text-wsu-gray">Program ID: {o.programId}</span>
-              </li>
-            ))}
+          <ul className="space-y-3 text-sm text-wsu-gray-dark">
+            {group.offerings.map((o) => {
+              const bullets = visibleTermBullets(o, termFieldSettings);
+              return (
+                <li
+                  key={o.programId}
+                  className="rounded-lg border border-wsu-gray/10 bg-wsu-cream/30 px-3 py-3"
+                >
+                  <p className="text-xs text-wsu-gray">Program ID: {o.programId}</p>
+                  {bullets.length > 0 ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {bullets.map((b, i) => (
+                        <li key={`${o.programId}-${i}`}>
+                          <span className="font-medium text-wsu-gray-dark">{b.label}: </span>
+                          <span className="text-wsu-gray-dark">{b.value || "—"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-wsu-gray-dark">{o.termLine}</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -200,7 +254,7 @@ function ProgramDetail({ group }: { group: PublicProgramGroup }) {
       <section className="space-y-3">
         {sectionTitle("Program questions")}
         {group.questions.length ? (
-          <TableFromRecords rows={group.questions} />
+          <TableFromRecords rows={group.questions} columns={questionColumns} />
         ) : (
           <p className="text-sm text-wsu-gray">None in export.</p>
         )}
@@ -209,7 +263,7 @@ function ProgramDetail({ group }: { group: PublicProgramGroup }) {
       <section className="space-y-3">
         {sectionTitle("Answers")}
         {group.answers.length ? (
-          <TableFromRecords rows={group.answers} />
+          <TableFromRecords rows={group.answers} columns={answerColumns} />
         ) : (
           <p className="text-sm text-wsu-gray">None in export.</p>
         )}
@@ -218,7 +272,7 @@ function ProgramDetail({ group }: { group: PublicProgramGroup }) {
       <section className="space-y-3">
         {sectionTitle("Documents")}
         {group.documents.length ? (
-          <TableFromRecords rows={group.documents} />
+          <TableFromRecords rows={group.documents} columns={documentColumns} />
         ) : (
           <p className="text-sm text-wsu-gray">None in export.</p>
         )}
@@ -227,12 +281,21 @@ function ProgramDetail({ group }: { group: PublicProgramGroup }) {
   );
 }
 
-function TableFromRecords({ rows }: { rows: Record<string, string>[] }) {
+function TableFromRecords({
+  rows,
+  columns,
+}: {
+  rows: Record<string, string>[];
+  columns?: string[];
+}) {
   const keys = useMemo(() => {
+    if (columns && columns.length > 0) {
+      return columns;
+    }
     const s = new Set<string>();
     for (const r of rows) for (const k of Object.keys(r)) s.add(k);
     return [...s];
-  }, [rows]);
+  }, [rows, columns]);
   if (keys.length === 0) return null;
   return (
     <div className="mt-3 overflow-x-auto rounded-lg border border-wsu-gray/15">

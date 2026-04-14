@@ -1,5 +1,11 @@
 import * as XLSX from "xlsx";
-import type { CasOffering, CasProgramGroup, CasPublicationData } from "./types";
+import type {
+  CasOffering,
+  CasProgramGroup,
+  CasPublicationData,
+  TermFieldSetting,
+} from "./types";
+import { REDUNDANT_DETAIL_COLUMN_KEYS } from "./types";
 
 function cellToString(v: unknown): string {
   if (v == null || v === "") return "";
@@ -37,7 +43,7 @@ function cleanProgramId(pid: string): string {
   return pid.trim();
 }
 
-function groupKey(row: Record<string, string>): string {
+export function groupKey(row: Record<string, string>): string {
   const w = (row["WebAdMIT Label"] || "").trim();
   if (w) return `webadmit:${w}`;
   const code = (row["ProgramCode"] || row["Program Code"] || "").trim();
@@ -84,6 +90,37 @@ function buildTermLine(row: Record<string, string>): string {
   if (close) tail.push(`close: ${close}`);
   if (tail.length) parts.push(tail.join(", "));
   return parts.join(" — ") || "Offering";
+}
+
+/** Ordered term / deadline fields for public bullets (subset of Program Attributes columns). */
+export function buildTermParts(row: Record<string, string>): { key: string; value: string }[] {
+  const pref = [
+    "Start Term",
+    "Start Year",
+    "Open Date",
+    "Application Deadline",
+    "Deadline",
+    "Updated Date",
+  ];
+  const out: { key: string; value: string }[] = [];
+  const used = new Set<string>();
+  for (const k of pref) {
+    const v = (row[k] ?? "").trim();
+    if (!v) continue;
+    out.push({ key: k, value: row[k] ?? "" });
+    used.add(k);
+  }
+  const rest = Object.keys(row)
+    .filter((k) => isTermishColumn(k) && !used.has(k) && (row[k] ?? "").trim())
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  for (const k of rest) {
+    out.push({ key: k, value: row[k] ?? "" });
+  }
+  if (out.length === 0) {
+    const tl = buildTermLine(row);
+    if (tl && tl !== "Offering") return [{ key: "__summary", value: tl }];
+  }
+  return out;
 }
 
 function computeShared(rows: Record<string, string>[]): Record<string, string> {
@@ -209,18 +246,227 @@ function defaultHideSummaryKey(k: string): boolean {
   return false;
 }
 
-export function parseCasWorkbook(buffer: Buffer, sourceFileName: string): CasPublicationData {
-  const wb = XLSX.read(buffer, { type: "buffer", cellDates: true });
+function unionKeysFromRows(rows: Record<string, string>[]): string[] {
+  const s = new Set<string>();
+  for (const r of rows) for (const k of Object.keys(r)) s.add(k);
+  return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
 
-  const pa = readSheet(wb, "Program Attributes").filter((r) => cleanProgramId(r["Program ID"] || ""));
-  const recRows = readSheet(wb, "Recommendations");
+function collectKeysFromGroups(
+  groups: CasProgramGroup[],
+  pick: (g: CasProgramGroup) => Record<string, string>[]
+): string[] {
+  const s = new Set<string>();
+  for (const g of groups) {
+    for (const r of pick(g)) {
+      for (const k of Object.keys(r)) s.add(k);
+    }
+  }
+  return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+export function collectSummaryColumnOptions(groups: CasProgramGroup[]): string[] {
+  const summaryColumnOptionsSet = new Set<string>();
+  for (const g of groups) {
+    for (const [k, v] of Object.entries(g.shared)) {
+      if (!v && k !== "Program") continue;
+      if (!isTermishColumn(k)) summaryColumnOptionsSet.add(k);
+    }
+  }
+  return [...summaryColumnOptionsSet].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+}
+
+export function recomputePublicationMetadata(data: CasPublicationData): CasPublicationData {
+  const summaryColumnOptions = collectSummaryColumnOptions(data.groups);
+  const questionColumnOptions = collectKeysFromGroups(data.groups, (g) => g.questions);
+  const answerColumnOptions = collectKeysFromGroups(data.groups, (g) => g.answers);
+  const documentColumnOptions = collectKeysFromGroups(data.groups, (g) => g.documents);
+  return {
+    ...data,
+    summaryColumnOptions,
+    questionColumnOptions,
+    answerColumnOptions,
+    documentColumnOptions,
+  };
+}
+
+/** Ensures column option arrays exist (migrates older blobs). */
+export function ensurePublicationColumnMetadata(data: CasPublicationData): CasPublicationData {
+  if (
+    Array.isArray(data.summaryColumnOptions) &&
+    Array.isArray(data.questionColumnOptions) &&
+    Array.isArray(data.answerColumnOptions) &&
+    Array.isArray(data.documentColumnOptions)
+  ) {
+    return data;
+  }
+  return recomputePublicationMetadata(data);
+}
+
+/** Older stored publications may lack `termParts` on offerings; derive from `termLine`. */
+export function ensurePublicationOfferingShapes(data: CasPublicationData): CasPublicationData {
+  const groups = data.groups.map((g) => ({
+    ...g,
+    offerings: g.offerings.map((o) => {
+      if (Array.isArray(o.termParts) && o.termParts.length > 0) return o;
+      const line = (o.termLine || "").trim() || "Offering";
+      return { ...o, termParts: [{ key: "__summary", value: line }] };
+    }),
+  }));
+  return { ...data, groups };
+}
+
+export function deriveDefaultVisibleDetailColumns(options: string[]): string[] {
+  return options.filter((k) => !REDUNDANT_DETAIL_COLUMN_KEYS.has(k.trim().toLowerCase()));
+}
+
+export function deriveDefaultTermFieldSettings(data: CasPublicationData): TermFieldSetting[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const pref = [
+    "Start Term",
+    "Start Year",
+    "Open Date",
+    "Application Deadline",
+    "Deadline",
+    "Updated Date",
+  ];
+  for (const g of data.groups) {
+    for (const o of g.offerings) {
+      for (const p of o.termParts) {
+        if (!p.value.trim()) continue;
+        if (seen.has(p.key)) continue;
+        seen.add(p.key);
+        keys.push(p.key);
+      }
+    }
+  }
+  const prefOrdered = pref.filter((k) => keys.includes(k));
+  const rest = keys
+    .filter((k) => !pref.includes(k))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  const ordered = [...prefOrdered, ...rest];
+  return ordered.map((key) => ({
+    key,
+    label: key === "__summary" ? "Application window" : key,
+    visible: true,
+  }));
+}
+
+export function publicationUiDefaults(data: CasPublicationData) {
+  const full = ensurePublicationColumnMetadata(data);
+  return {
+    visible_question_columns: deriveDefaultVisibleDetailColumns(full.questionColumnOptions),
+    visible_answer_columns: deriveDefaultVisibleDetailColumns(full.answerColumnOptions),
+    visible_document_columns: deriveDefaultVisibleDetailColumns(full.documentColumnOptions),
+    term_field_settings: deriveDefaultTermFieldSettings(full),
+  };
+}
+
+function dedupeOrgRows(rows: Record<string, string>[]): Record<string, string>[] {
+  const seen = new Set<string>();
+  const out: Record<string, string>[] = [];
+  for (const r of rows) {
+    const sig = JSON.stringify(r);
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    out.push(r);
+  }
+  return out;
+}
+
+function mergeGroupRecommendations(
+  existing: CasProgramGroup,
+  incoming: CasProgramGroup
+): { rec: Record<string, string> | null; note?: string } {
+  const a = existing.recommendations;
+  const b = incoming.recommendations;
+  if (!a && !b) return { rec: null };
+  if (a && !b) return { rec: a, note: existing.recommendationNote };
+  if (!a && b) return { rec: b, note: incoming.recommendationNote };
+  const same = JSON.stringify(a) === JSON.stringify(b);
+  if (same) {
+    return {
+      rec: a,
+      note: existing.recommendationNote ?? incoming.recommendationNote,
+    };
+  }
+  return {
+    rec: a,
+    note: "Recommendation settings differ between merged CAS exports for this program group; values shown are from the first export. Confirm in CAS.",
+  };
+}
+
+function cloneGroup(g: CasProgramGroup): CasProgramGroup {
+  return JSON.parse(JSON.stringify(g)) as CasProgramGroup;
+}
+
+/**
+ * Merges a second CAS export into the first (same schema). Groups match on `groupKey`;
+ * offerings dedupe on Program ID; questions/documents/answers are unioned and deduped.
+ */
+export function mergePublicationData(
+  base: CasPublicationData,
+  extra: CasPublicationData
+): CasPublicationData {
+  const a = ensurePublicationColumnMetadata(base);
+  const b = ensurePublicationColumnMetadata(extra);
+  const map = new Map<string, CasProgramGroup>();
+  for (const g of a.groups) {
+    map.set(g.groupKey, cloneGroup(g));
+  }
+  for (const g of b.groups) {
+    const ex = map.get(g.groupKey);
+    if (!ex) {
+      map.set(g.groupKey, cloneGroup(g));
+      continue;
+    }
+    const pidSeen = new Set(ex.offerings.map((o) => o.programId));
+    for (const o of g.offerings) {
+      if (!pidSeen.has(o.programId)) {
+        ex.offerings.push({ ...o, termParts: [...o.termParts] });
+        pidSeen.add(o.programId);
+      }
+    }
+    ex.questions = dedupeQuestions([...ex.questions, ...g.questions]);
+    ex.documents = dedupeDocuments([...ex.documents, ...g.documents]);
+    ex.answers = dedupeAnswers([...ex.answers, ...g.answers]);
+    const mergedRec = mergeGroupRecommendations(ex, g);
+    ex.recommendations = mergedRec.rec;
+    ex.recommendationNote = mergedRec.note;
+  }
+  const mergedGroups = [...map.values()].sort((x, y) =>
+    x.displayName.localeCompare(y.displayName, undefined, { sensitivity: "base" })
+  );
+  const sourceFileName = `${a.sourceFileName} + ${b.sourceFileName}`;
+  const orgQuestions = dedupeOrgRows([...a.orgQuestions, ...b.orgQuestions]);
+  const orgAnswers = dedupeOrgRows([...a.orgAnswers, ...b.orgAnswers]);
+  const raw: CasPublicationData = {
+    sourceFileName,
+    orgQuestions,
+    orgAnswers,
+    groups: mergedGroups,
+    summaryColumnOptions: [],
+    questionColumnOptions: [],
+    answerColumnOptions: [],
+    documentColumnOptions: [],
+  };
+  return recomputePublicationMetadata(raw);
+}
+
+function buildGroupsFromSheets(params: {
+  pa: Record<string, string>[];
+  recRows: Record<string, string>[];
+  questionsAll: Record<string, string>[];
+  documentsAll: Record<string, string>[];
+  answersAll: Record<string, string>[];
+  orgQuestions: Record<string, string>[];
+  orgAnswers: Record<string, string>[];
+}): CasProgramGroup[] {
+  const { pa, recRows, questionsAll, documentsAll, answersAll } = params;
   const recMap = mergeRecs(pa, recRows);
-  const questionsAll = readSheet(wb, "Questions").filter((r) => cleanProgramId(r["Program ID"] || ""));
-  const documentsAll = readSheet(wb, "Documents").filter((r) => cleanProgramId(r["Program ID"] || ""));
-  const answersAll = readSheet(wb, "Answers").filter((r) => cleanProgramId(r["Program ID"] || ""));
-  const orgQuestions = readSheet(wb, "Org Questions");
-  const orgAnswers = readSheet(wb, "Org Answers");
-
   const byGroup = new Map<string, Record<string, string>[]>();
   for (const row of pa) {
     const g = groupKey(row);
@@ -239,6 +485,7 @@ export function parseCasWorkbook(buffer: Buffer, sourceFileName: string): CasPub
         programId: pid,
         termLine: buildTermLine(row),
         varying,
+        termParts: buildTermParts(row),
       };
     });
 
@@ -268,25 +515,53 @@ export function parseCasWorkbook(buffer: Buffer, sourceFileName: string): CasPub
   }
 
   groups.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
+  return groups;
+}
 
-  const summaryColumnOptionsSet = new Set<string>();
-  for (const g of groups) {
-    for (const [k, v] of Object.entries(g.shared)) {
-      if (!v && k !== "Program") continue;
-      if (!isTermishColumn(k)) summaryColumnOptionsSet.add(k);
-    }
-  }
-  const summaryColumnOptions = [...summaryColumnOptionsSet].sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" })
-  );
+export function parseCasWorkbook(buffer: Buffer, sourceFileName: string): CasPublicationData {
+  const wb = XLSX.read(buffer, { type: "buffer", cellDates: true });
 
-  return {
+  const pa = readSheet(wb, "Program Attributes").filter((r) => cleanProgramId(r["Program ID"] || ""));
+  const recRows = readSheet(wb, "Recommendations");
+  const questionsAll = readSheet(wb, "Questions").filter((r) => cleanProgramId(r["Program ID"] || ""));
+  const documentsAll = readSheet(wb, "Documents").filter((r) => cleanProgramId(r["Program ID"] || ""));
+  const answersAll = readSheet(wb, "Answers").filter((r) => cleanProgramId(r["Program ID"] || ""));
+  const orgQuestions = readSheet(wb, "Org Questions");
+  const orgAnswers = readSheet(wb, "Org Answers");
+
+  const groups = buildGroupsFromSheets({
+    pa,
+    recRows,
+    questionsAll,
+    documentsAll,
+    answersAll,
+    orgQuestions,
+    orgAnswers,
+  });
+
+  const base: CasPublicationData = {
     sourceFileName,
     orgQuestions,
     orgAnswers,
     groups,
-    summaryColumnOptions,
+    summaryColumnOptions: [],
+    questionColumnOptions: [],
+    answerColumnOptions: [],
+    documentColumnOptions: [],
   };
+  return recomputePublicationMetadata(base);
+}
+
+export function parseAndMergeCasWorkbooks(
+  parts: { buffer: Buffer; fileName: string }[]
+): CasPublicationData {
+  if (parts.length === 0) throw new Error("No files to merge");
+  let acc = parseCasWorkbook(parts[0].buffer, parts[0].fileName);
+  for (let i = 1; i < parts.length; i++) {
+    const next = parseCasWorkbook(parts[i].buffer, parts[i].fileName);
+    acc = mergePublicationData(acc, next);
+  }
+  return acc;
 }
 
 export function defaultVisibleColumns(options: string[]): string[] {
@@ -306,4 +581,41 @@ export function pickVisibleShared(
     if (k in shared) out[k] = shared[k];
   }
   return out;
+}
+
+export function filterRecordRows(
+  rows: Record<string, string>[],
+  visibleKeys: string[]
+): Record<string, string>[] {
+  if (visibleKeys.length === 0) return rows;
+  return rows.map((r) => {
+    const o: Record<string, string> = {};
+    for (const k of visibleKeys) {
+      if (k in r) o[k] = r[k];
+    }
+    return o;
+  });
+}
+
+export function mergeTermFieldSettings(
+  previous: TermFieldSetting[] | undefined,
+  defaults: TermFieldSetting[]
+): TermFieldSetting[] {
+  const prevMap = new Map((previous ?? []).map((t) => [t.key, t]));
+  return defaults.map((d) => {
+    const p = prevMap.get(d.key);
+    if (!p) return { ...d };
+    return { key: d.key, label: p.label.trim() || d.label, visible: p.visible };
+  });
+}
+
+export function mergeVisibleDetailKeys(
+  previous: string[] | undefined,
+  options: string[],
+  defaults: string[]
+): string[] {
+  const opt = new Set(options);
+  const filtered = (previous ?? []).filter((k) => opt.has(k));
+  if (filtered.length > 0) return filtered;
+  return defaults.filter((k) => opt.has(k));
 }

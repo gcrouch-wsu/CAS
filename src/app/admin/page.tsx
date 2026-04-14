@@ -6,7 +6,7 @@ import { useState } from "react";
 export default function AdminHomePage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -19,14 +19,16 @@ export default function AdminHomePage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!file) {
-      setError("Choose an Excel file.");
+    if (files.length === 0) {
+      setError("Choose at least one Excel file.");
       return;
     }
     setLoading(true);
     try {
       const fd = new FormData();
-      fd.set("file", file);
+      for (const f of files) {
+        fd.append("files", f);
+      }
       if (title.trim()) fd.set("title", title.trim());
       const res = await fetch("/api/admin/publications", {
         method: "POST",
@@ -60,8 +62,7 @@ export default function AdminHomePage() {
             Publish CAS export
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-wsu-gray">
-            Upload a workbook from CAS. Next, you&apos;ll choose summary columns and public
-            options before sharing the link.
+            Upload one workbook, or select <strong className="font-semibold text-wsu-gray-dark">EngineeringCAS and GradCAS together</strong> in one step (they are merged into one publication). Then choose summary columns and share the link.
           </p>
         </div>
         <button
@@ -78,25 +79,61 @@ export default function AdminHomePage() {
         className="rounded-2xl border border-wsu-gray/10 bg-white p-6 shadow-sm"
       >
         <div>
-          <span className="text-sm font-semibold text-wsu-gray-dark">Excel file</span>
-          <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-wsu-gray/25 bg-wsu-cream/50 px-4 py-12 transition hover:border-wsu-crimson/40 hover:bg-wsu-crimson/[0.04]">
+          <span className="text-sm font-semibold text-wsu-gray-dark">
+            CAS Excel workbooks (.xlsx)
+          </span>
+          <p className="mt-1 text-xs leading-relaxed text-wsu-gray">
+            <strong className="text-wsu-gray-dark">Same-time upload:</strong> click below, then in the file dialog select both exports — hold{" "}
+            <kbd className="rounded border border-wsu-gray/25 bg-wsu-cream px-1 font-mono text-[10px] text-wsu-gray-dark">
+              Ctrl
+            </kbd>{" "}
+            (Windows) or{" "}
+            <kbd className="rounded border border-wsu-gray/25 bg-wsu-cream px-1 font-mono text-[10px] text-wsu-gray-dark">
+              Cmd
+            </kbd>{" "}
+            (Mac) while clicking each file. Order is kept as you pick them (first file wins when merge settings conflict).
+          </p>
+          <label className="mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-wsu-gray/25 bg-wsu-cream/50 px-4 py-12 transition hover:border-wsu-crimson/40 hover:bg-wsu-crimson/[0.04]">
             <span className="text-center text-sm text-wsu-gray">
-              {file ? (
-                <span className="font-medium text-wsu-gray-dark">{file.name}</span>
+              {files.length > 0 ? (
+                <span className="block max-w-full">
+                  <span className="font-medium text-wsu-gray-dark">
+                    {files.length} file{files.length === 1 ? "" : "s"} selected
+                  </span>
+                  <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-left text-xs text-wsu-gray-dark">
+                    {files.map((f) => (
+                      <li key={`${f.name}-${f.size}`} className="truncate">
+                        {f.name}
+                      </li>
+                    ))}
+                  </ul>
+                </span>
               ) : (
                 <>
-                  <span className="font-medium text-wsu-gray-dark">Click to choose a file</span>
-                  <span className="mt-1 block text-xs text-wsu-gray">.xlsx from CAS</span>
+                  <span className="font-medium text-wsu-gray-dark">Click to choose file(s)</span>
+                  <span className="mt-1 block text-xs text-wsu-gray">
+                    One file, or multiple .xlsx (e.g. EngineeringCAS + GradCAS)
+                  </span>
                 </>
               )}
             </span>
             <input
               type="file"
+              multiple
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
               className="sr-only"
             />
           </label>
+          {files.length > 0 && (
+            <button
+              type="button"
+              className="mt-2 text-xs font-medium text-wsu-crimson underline decoration-wsu-crimson/30 hover:decoration-wsu-crimson"
+              onClick={() => setFiles([])}
+            >
+              Clear selection
+            </button>
+          )}
         </div>
 
         <label className="mt-6 block text-sm font-medium text-wsu-gray-dark">
@@ -105,7 +142,7 @@ export default function AdminHomePage() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Engineering CAS — 2026"
+            placeholder="e.g. Engineering & Graduate CAS — 2026"
             className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 px-3 py-2.5 text-wsu-gray-dark shadow-inner placeholder:text-wsu-gray/50 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/20"
           />
         </label>
@@ -118,13 +155,13 @@ export default function AdminHomePage() {
 
         <button
           type="submit"
-          disabled={loading || !file}
+          disabled={loading || files.length === 0}
           className="mt-8 w-full rounded-xl bg-wsu-crimson px-6 py-4 text-lg font-semibold text-white shadow-lg shadow-wsu-crimson/25 ring-2 ring-wsu-crimson/20 transition hover:bg-wsu-crimson-dark hover:ring-wsu-crimson/30 disabled:pointer-events-none disabled:opacity-40"
         >
-          {loading ? "Uploading…" : "Upload & continue"}
+          {loading ? "Uploading…" : files.length > 1 ? "Upload merged workbooks" : "Upload & continue"}
         </button>
-        {!file && (
-          <p className="mt-3 text-center text-xs text-wsu-gray">Select a file to enable upload.</p>
+        {files.length === 0 && (
+          <p className="mt-3 text-center text-xs text-wsu-gray">Select at least one file to enable upload.</p>
         )}
       </form>
     </div>

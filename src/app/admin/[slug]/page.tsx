@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { TermFieldSetting } from "@/lib/types";
 
 type ConfigResponse = {
   slug: string;
@@ -10,6 +11,13 @@ type ConfigResponse = {
   defaultGroupKey: string;
   showOrgOnPublic: boolean;
   summaryColumnOptions: string[];
+  questionColumnOptions: string[];
+  answerColumnOptions: string[];
+  documentColumnOptions: string[];
+  visibleQuestionColumns: string[];
+  visibleAnswerColumns: string[];
+  visibleDocumentColumns: string[];
+  termFieldSettings: TermFieldSetting[];
   groupKeys: { key: string; label: string }[];
   sourceFileName: string;
 };
@@ -21,6 +29,14 @@ function sortedKeysEqual(a: string[], b: string[]): boolean {
   return sa.every((v, i) => v === sb[i]);
 }
 
+function termPayloadEqual(a: TermFieldSetting[], b: TermFieldSetting[]): boolean {
+  const norm = (x: TermFieldSetting[]) =>
+    [...x]
+      .sort((p, q) => p.key.localeCompare(q.key))
+      .map((t) => ({ key: t.key, label: t.label, visible: t.visible }));
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+}
+
 export default function AdminPublicationPage() {
   const params = useParams();
   const router = useRouter();
@@ -29,16 +45,27 @@ export default function AdminPublicationPage() {
   const [draftColumns, setDraftColumns] = useState<string[]>([]);
   const [draftDefault, setDraftDefault] = useState("");
   const [draftShowOrg, setDraftShowOrg] = useState(true);
+  const [draftQuestionCols, setDraftQuestionCols] = useState<string[]>([]);
+  const [draftAnswerCols, setDraftAnswerCols] = useState<string[]>([]);
+  const [draftDocumentCols, setDraftDocumentCols] = useState<string[]>([]);
+  const [draftTermSettings, setDraftTermSettings] = useState<TermFieldSetting[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [mergeFile, setMergeFile] = useState<File | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState<string | null>(null);
 
   const applyConfig = useCallback((c: ConfigResponse) => {
     setSaved(c);
     setDraftColumns([...c.visibleColumnKeys]);
     setDraftDefault(c.defaultGroupKey);
     setDraftShowOrg(c.showOrgOnPublic);
+    setDraftQuestionCols([...c.visibleQuestionColumns]);
+    setDraftAnswerCols([...c.visibleAnswerColumns]);
+    setDraftDocumentCols([...c.visibleDocumentColumns]);
+    setDraftTermSettings(c.termFieldSettings.map((t) => ({ ...t })));
   }, []);
 
   const loadConfig = useCallback(async () => {
@@ -70,9 +97,22 @@ export default function AdminPublicationPage() {
     return (
       !sortedKeysEqual(draftColumns, saved.visibleColumnKeys) ||
       draftDefault !== saved.defaultGroupKey ||
-      draftShowOrg !== saved.showOrgOnPublic
+      draftShowOrg !== saved.showOrgOnPublic ||
+      !sortedKeysEqual(draftQuestionCols, saved.visibleQuestionColumns) ||
+      !sortedKeysEqual(draftAnswerCols, saved.visibleAnswerColumns) ||
+      !sortedKeysEqual(draftDocumentCols, saved.visibleDocumentColumns) ||
+      !termPayloadEqual(draftTermSettings, saved.termFieldSettings)
     );
-  }, [saved, draftColumns, draftDefault, draftShowOrg]);
+  }, [
+    saved,
+    draftColumns,
+    draftDefault,
+    draftShowOrg,
+    draftQuestionCols,
+    draftAnswerCols,
+    draftDocumentCols,
+    draftTermSettings,
+  ]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
@@ -94,22 +134,31 @@ export default function AdminPublicationPage() {
           visibleColumnKeys: draftColumns,
           defaultGroupKey: draftDefault,
           showOrgOnPublic: draftShowOrg,
+          visibleQuestionColumns: draftQuestionCols,
+          visibleAnswerColumns: draftAnswerCols,
+          visibleDocumentColumns: draftDocumentCols,
+          termFieldSettings: draftTermSettings,
         }),
       });
       if (res.status === 401) {
         router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
         return;
       }
-      const body = await res.json();
+      const body = (await res.json()) as Partial<ConfigResponse> & { error?: string };
       if (!res.ok) {
-        setError((body as { error?: string }).error ?? "Save failed");
+        setError(body.error ?? "Save failed");
         return;
       }
       applyConfig({
         ...saved,
-        visibleColumnKeys: body.visibleColumnKeys,
-        defaultGroupKey: body.defaultGroupKey,
-        showOrgOnPublic: Boolean(body.showOrgOnPublic),
+        visibleColumnKeys: body.visibleColumnKeys ?? saved.visibleColumnKeys,
+        defaultGroupKey: body.defaultGroupKey ?? saved.defaultGroupKey,
+        showOrgOnPublic:
+          body.showOrgOnPublic !== undefined ? Boolean(body.showOrgOnPublic) : saved.showOrgOnPublic,
+        visibleQuestionColumns: body.visibleQuestionColumns ?? saved.visibleQuestionColumns,
+        visibleAnswerColumns: body.visibleAnswerColumns ?? saved.visibleAnswerColumns,
+        visibleDocumentColumns: body.visibleDocumentColumns ?? saved.visibleDocumentColumns,
+        termFieldSettings: body.termFieldSettings ?? saved.termFieldSettings,
       });
       setSaveMessage("Saved. Public page now uses these settings.");
       window.setTimeout(() => setSaveMessage(null), 5000);
@@ -120,11 +169,54 @@ export default function AdminPublicationPage() {
     }
   }
 
+  async function mergeUpload() {
+    if (!mergeFile) {
+      setMergeMessage("Choose a workbook to merge.");
+      return;
+    }
+    setMergeBusy(true);
+    setMergeMessage(null);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", mergeFile);
+      const res = await fetch(`/api/admin/publications/${slug}/merge`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      const body = (await res.json()) as { error?: string; sourceFileName?: string };
+      if (res.status === 401) {
+        router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
+        return;
+      }
+      if (!res.ok) {
+        setError(body.error ?? "Merge failed");
+        return;
+      }
+      setMergeFile(null);
+      setMergeMessage(
+        body.sourceFileName
+          ? `Merged. Combined source label: ${body.sourceFileName}`
+          : "Merged successfully."
+      );
+      await loadConfig();
+    } catch {
+      setError("Network error during merge");
+    } finally {
+      setMergeBusy(false);
+    }
+  }
+
   function discard() {
     if (!saved) return;
     setDraftColumns([...saved.visibleColumnKeys]);
     setDraftDefault(saved.defaultGroupKey);
     setDraftShowOrg(saved.showOrgOnPublic);
+    setDraftQuestionCols([...saved.visibleQuestionColumns]);
+    setDraftAnswerCols([...saved.visibleAnswerColumns]);
+    setDraftDocumentCols([...saved.visibleDocumentColumns]);
+    setDraftTermSettings(saved.termFieldSettings.map((t) => ({ ...t })));
     setSaveMessage(null);
   }
 
@@ -135,6 +227,27 @@ export default function AdminPublicationPage() {
       else next.add(key);
       return [...next];
     });
+  }
+
+  function toggleDetailColumn(setter: React.Dispatch<React.SetStateAction<string[]>>, key: string) {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return [...next];
+    });
+  }
+
+  function setTermLabel(key: string, label: string) {
+    setDraftTermSettings((prev) =>
+      prev.map((t) => (t.key === key ? { ...t, label } : t))
+    );
+  }
+
+  function setTermVisible(key: string, visible: boolean) {
+    setDraftTermSettings((prev) =>
+      prev.map((t) => (t.key === key ? { ...t, visible } : t))
+    );
   }
 
   const publicPath = `/s/${slug}`;
@@ -201,9 +314,36 @@ export default function AdminPublicationPage() {
         <div className="mt-8 space-y-10">
           <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
             <h2 className="text-xs font-semibold uppercase tracking-widest text-wsu-gray">
-              Source file
+              Source file(s)
             </h2>
             <p className="mt-2 text-sm text-wsu-gray-dark">{saved.sourceFileName}</p>
+            <p className="mt-3 text-sm text-wsu-gray">
+              Add another CAS workbook (for example GradCAS after EngineeringCAS). Programs with
+              the same CAS grouping key are merged; others are appended.
+            </p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="block flex-1 text-sm font-medium text-wsu-gray-dark">
+                Merge workbook
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  disabled={mergeBusy}
+                  onChange={(e) => setMergeFile(e.target.files?.[0] ?? null)}
+                  className="mt-1.5 block w-full text-sm text-wsu-gray-dark file:mr-3 file:rounded-md file:border-0 file:bg-wsu-crimson/10 file:px-3 file:py-2 file:text-sm file:font-medium file:text-wsu-crimson hover:file:bg-wsu-crimson/20"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={mergeBusy || !mergeFile}
+                onClick={() => void mergeUpload()}
+                className="rounded-lg bg-wsu-gray-dark px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-wsu-gray disabled:opacity-50"
+              >
+                {mergeBusy ? "Merging…" : "Merge upload"}
+              </button>
+            </div>
+            {mergeMessage && (
+              <p className="mt-3 text-sm text-emerald-800">{mergeMessage}</p>
+            )}
           </section>
 
           <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
@@ -260,10 +400,10 @@ export default function AdminPublicationPage() {
               Summary columns (public)
             </h2>
             <p className="mt-2 text-sm text-wsu-gray">
-              Checked columns appear in the public summary for each program. Term-specific
-              dates always show under &quot;Application windows&quot;. Use{" "}
-              <strong className="text-wsu-gray-dark">Save changes</strong> below to update
-              the live public page.
+              Checked columns appear in the public summary for each program. Application-window
+              dates are controlled separately below. Use{" "}
+              <strong className="text-wsu-gray-dark">Save changes</strong> to update the live
+              public page.
             </p>
             <ul className="mt-4 max-h-[28rem] space-y-1 overflow-y-auto rounded-lg border border-wsu-gray/10 bg-wsu-cream/50 p-3">
               {saved.summaryColumnOptions.map((key, idx) => (
@@ -280,6 +420,131 @@ export default function AdminPublicationPage() {
                     className="mt-0.5 size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
                   />
                   <label htmlFor={`col-${idx}`} className="cursor-pointer text-sm text-wsu-gray-dark">
+                    {key}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-wsu-gray">
+              Application window lines (public)
+            </h2>
+            <p className="mt-2 text-sm text-wsu-gray">
+              Each line appears as a bullet under Application windows. Relabel for your audience
+              (for example &quot;CAS import&quot; instead of &quot;Open Date&quot;) and hide fields
+              you do not need.
+            </p>
+            <ul className="mt-4 space-y-3">
+              {draftTermSettings.map((t) => (
+                <li
+                  key={t.key}
+                  className="rounded-lg border border-wsu-gray/15 bg-wsu-cream/40 p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-wsu-gray-dark">
+                      <input
+                        type="checkbox"
+                        checked={t.visible}
+                        disabled={saving}
+                        onChange={(e) => setTermVisible(t.key, e.target.checked)}
+                        className="size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
+                      />
+                      Show
+                    </label>
+                    <span className="text-xs font-mono text-wsu-gray">({t.key})</span>
+                  </div>
+                  <label className="mt-2 block text-xs font-medium text-wsu-gray">
+                    Public label
+                    <input
+                      type="text"
+                      value={t.label}
+                      disabled={saving}
+                      onChange={(e) => setTermLabel(t.key, e.target.value)}
+                      className="mt-1 w-full rounded-md border border-wsu-gray/20 bg-white px-2 py-1.5 text-sm text-wsu-gray-dark focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                    />
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-wsu-gray">
+              Program questions table (public columns)
+            </h2>
+            <p className="mt-2 text-sm text-wsu-gray">
+              Cycle, Organization, Program, and Program ID are hidden by default because they
+              repeat the summary. Turn them on if you need them in this table.
+            </p>
+            <ul className="mt-4 max-h-[22rem] space-y-1 overflow-y-auto rounded-lg border border-wsu-gray/10 bg-wsu-cream/50 p-3">
+              {saved.questionColumnOptions.map((key, idx) => (
+                <li
+                  key={key}
+                  className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-white/80"
+                >
+                  <input
+                    id={`qcol-${idx}`}
+                    type="checkbox"
+                    checked={draftQuestionCols.includes(key)}
+                    disabled={saving}
+                    onChange={() => toggleDetailColumn(setDraftQuestionCols, key)}
+                    className="mt-0.5 size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
+                  />
+                  <label htmlFor={`qcol-${idx}`} className="cursor-pointer text-sm text-wsu-gray-dark">
+                    {key}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-wsu-gray">
+              Answers table (public columns)
+            </h2>
+            <ul className="mt-4 max-h-[22rem] space-y-1 overflow-y-auto rounded-lg border border-wsu-gray/10 bg-wsu-cream/50 p-3">
+              {saved.answerColumnOptions.map((key, idx) => (
+                <li
+                  key={key}
+                  className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-white/80"
+                >
+                  <input
+                    id={`acol-${idx}`}
+                    type="checkbox"
+                    checked={draftAnswerCols.includes(key)}
+                    disabled={saving}
+                    onChange={() => toggleDetailColumn(setDraftAnswerCols, key)}
+                    className="mt-0.5 size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
+                  />
+                  <label htmlFor={`acol-${idx}`} className="cursor-pointer text-sm text-wsu-gray-dark">
+                    {key}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-wsu-gray">
+              Documents table (public columns)
+            </h2>
+            <ul className="mt-4 max-h-[22rem] space-y-1 overflow-y-auto rounded-lg border border-wsu-gray/10 bg-wsu-cream/50 p-3">
+              {saved.documentColumnOptions.map((key, idx) => (
+                <li
+                  key={key}
+                  className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-white/80"
+                >
+                  <input
+                    id={`dcol-${idx}`}
+                    type="checkbox"
+                    checked={draftDocumentCols.includes(key)}
+                    disabled={saving}
+                    onChange={() => toggleDetailColumn(setDraftDocumentCols, key)}
+                    className="mt-0.5 size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
+                  />
+                  <label htmlFor={`dcol-${idx}`} className="cursor-pointer text-sm text-wsu-gray-dark">
                     {key}
                   </label>
                 </li>

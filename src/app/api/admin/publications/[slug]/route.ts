@@ -5,11 +5,21 @@ import { unauthorizedIfNotAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
 
+const termFieldSettingSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  visible: z.boolean(),
+});
+
 const patchSchema = z.object({
   title: z.string().min(0).max(500).optional(),
   visibleColumnKeys: z.array(z.string()).optional(),
   defaultGroupKey: z.string().optional(),
   showOrgOnPublic: z.boolean().optional(),
+  visibleQuestionColumns: z.array(z.string()).optional(),
+  visibleAnswerColumns: z.array(z.string()).optional(),
+  visibleDocumentColumns: z.array(z.string()).optional(),
+  termFieldSettings: z.array(termFieldSettingSchema).optional(),
 });
 
 export async function GET(
@@ -34,6 +44,13 @@ export async function GET(
     defaultGroupKey: row.default_group_key,
     showOrgOnPublic: row.show_org_on_public,
     summaryColumnOptions: row.data.summaryColumnOptions,
+    questionColumnOptions: row.data.questionColumnOptions,
+    answerColumnOptions: row.data.answerColumnOptions,
+    documentColumnOptions: row.data.documentColumnOptions,
+    visibleQuestionColumns: row.visible_question_columns,
+    visibleAnswerColumns: row.visible_answer_columns,
+    visibleDocumentColumns: row.visible_document_columns,
+    termFieldSettings: row.term_field_settings,
     groupKeys: row.data.groups.map((g) => ({
       key: g.groupKey,
       label: g.displayName,
@@ -82,5 +99,9 @@ export async function PATCH(
     visibleColumnKeys: updated.visible_columns,
     defaultGroupKey: updated.default_group_key,
     showOrgOnPublic: updated.show_org_on_public,
+    visibleQuestionColumns: updated.visible_question_columns,
+    visibleAnswerColumns: updated.visible_answer_columns,
+    visibleDocumentColumns: updated.visible_document_columns,
+    termFieldSettings: updated.term_field_settings,
   });
 }

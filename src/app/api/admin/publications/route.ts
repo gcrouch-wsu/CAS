@@ -1,7 +1,7 @@
 import { customAlphabet } from "nanoid";
 import { NextResponse } from "next/server";
 import { createPublication } from "@/lib/cas-store";
-import { parseCasWorkbook } from "@/lib/parse-cas";
+import { parseAndMergeCasWorkbooks, parseCasWorkbook } from "@/lib/parse-cas";
 import { unauthorizedIfNotAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
@@ -23,21 +23,52 @@ export async function POST(request: Request) {
   }
 
   const form = await request.formData();
-  const file = form.get("file");
   const titleRaw = form.get("title");
   const title =
     typeof titleRaw === "string" && titleRaw.trim()
       ? titleRaw.trim()
       : "CAS programs";
 
-  if (!(file instanceof File) || file.size === 0) {
+  /** Primary single file (legacy) */
+  const file = form.get("file");
+  /** Optional second file (legacy) */
+  const file2 = form.get("file2");
+  /** Same-time multi-select: `files` from input[multiple] */
+  const multiRaw = form.getAll("files");
+  const multiFiles = multiRaw.filter(
+    (x): x is File => x instanceof File && x.size > 0
+  );
+
+  let parts: { buffer: Buffer; fileName: string }[] = [];
+
+  if (multiFiles.length > 0) {
+    parts = await Promise.all(
+      multiFiles.map(async (f) => ({
+        buffer: Buffer.from(await f.arrayBuffer()),
+        fileName: f.name,
+      }))
+    );
+  } else if (file instanceof File && file.size > 0) {
+    parts = [{ buffer: Buffer.from(await file.arrayBuffer()), fileName: file.name }];
+    if (file2 instanceof File && file2.size > 0) {
+      parts.push({
+        buffer: Buffer.from(await file2.arrayBuffer()),
+        fileName: file2.name,
+      });
+    }
+  }
+
+  if (parts.length === 0) {
     return NextResponse.json({ error: "Missing file" }, { status: 400 });
   }
 
-  const buf = Buffer.from(await file.arrayBuffer());
   let data;
   try {
-    data = parseCasWorkbook(buf, file.name);
+    if (parts.length === 1) {
+      data = parseCasWorkbook(parts[0].buffer, parts[0].fileName);
+    } else {
+      data = parseAndMergeCasWorkbooks(parts);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Parse failed";
     return NextResponse.json({ error: msg }, { status: 400 });
