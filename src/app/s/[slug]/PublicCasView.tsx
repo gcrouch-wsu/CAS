@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
+  APPLICATION_WINDOW_COLUMN,
   applicationWindowCardTitle,
   augmentDetailRowsWithApplicationWindow,
   collapseAugmentedDetailRowsByMatchingContent,
@@ -376,6 +377,7 @@ function ProgramDetail({
             rows={questionsWithWindow}
             columns={questionColumnsWithWindow}
             layout="stacked"
+            stackedGroupByApplicationWindow
           />
         ) : (
           <p className="text-sm text-wsu-gray">None in export.</p>
@@ -417,15 +419,39 @@ function orderKeysForStacked(keys: string[]): string[] {
   return picked;
 }
 
+/** Preserve overall row order; each label’s group collects rows in first-seen label order. */
+function groupRowsByApplicationWindowColumn(
+  rows: Record<string, string>[],
+  windowKey: string
+): { label: string; rows: Record<string, string>[] }[] {
+  const groups: { label: string; rows: Record<string, string>[] }[] = [];
+  const indexByLabel = new Map<string, number>();
+  for (const r of rows) {
+    const raw = getRecordValueCi(r, windowKey) ?? "";
+    const label = raw.trim() === "" ? "—" : raw.trim();
+    let i = indexByLabel.get(label);
+    if (i === undefined) {
+      i = groups.length;
+      indexByLabel.set(label, i);
+      groups.push({ label, rows: [] });
+    }
+    groups[i].rows.push(r);
+  }
+  return groups;
+}
+
 function TableFromRecords({
   rows,
   columns,
   layout = "table",
+  stackedGroupByApplicationWindow = false,
 }: {
   rows: Record<string, string>[];
   columns?: string[];
   /** `stacked`: each CAS row is a card (label above value) — easier for long question text. */
   layout?: "table" | "stacked";
+  /** When `stacked`, show one Application window header per distinct window instead of per row. */
+  stackedGroupByApplicationWindow?: boolean;
 }) {
   const keys = useMemo(() => {
     if (columns && columns.length > 0) {
@@ -451,6 +477,72 @@ function TableFromRecords({
   }
 
   if (layout === "stacked") {
+    const windowColKey = stackedKeys.find(
+      (k) => k.trim().toLowerCase() === APPLICATION_WINDOW_COLUMN.toLowerCase()
+    );
+    const innerKeys = windowColKey
+      ? stackedKeys.filter(
+          (k) => k.trim().toLowerCase() !== APPLICATION_WINDOW_COLUMN.toLowerCase()
+        )
+      : stackedKeys;
+    const useWindowGroups =
+      stackedGroupByApplicationWindow && Boolean(windowColKey) && rows.length > 0;
+    const windowGroups = useWindowGroups
+      ? groupRowsByApplicationWindowColumn(rows, windowColKey!)
+      : null;
+
+    const stackedRowBlock = (r: Record<string, string>) => (
+      <dl className="space-y-3">
+        {innerKeys.map((k) => {
+          const raw = getRecordValueCi(r, k) ?? "";
+          const isQuestion = k.trim().toLowerCase() === "question";
+          return (
+            <div key={k}>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-wsu-crimson">
+                {k}
+              </dt>
+              <dd
+                className={`mt-1 whitespace-pre-wrap text-wsu-gray-dark ${
+                  isQuestion
+                    ? "text-base font-medium leading-relaxed text-wsu-gray-dark"
+                    : "text-sm leading-relaxed"
+                }`}
+              >
+                {raw || "—"}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    );
+
+    if (windowGroups) {
+      return (
+        <div className="mt-3 space-y-5">
+          {windowGroups.map((g, gi) => (
+            <div
+              key={`${g.label}-${gi}`}
+              className="overflow-hidden rounded-lg border border-wsu-gray/15 bg-white shadow-sm ring-1 ring-wsu-gray/5"
+            >
+              <div className="border-b border-wsu-gray/10 bg-wsu-cream/50 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-wsu-crimson">
+                  {APPLICATION_WINDOW_COLUMN}
+                </p>
+                <p className="mt-0.5 text-sm font-semibold text-wsu-gray-dark">{g.label}</p>
+              </div>
+              <div className="divide-y divide-wsu-gray/10">
+                {g.rows.map((r, ri) => (
+                  <div key={ri} className="px-3 py-3">
+                    {stackedRowBlock(r)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div className="mt-3 space-y-4">
         {rows.map((r, i) => (
