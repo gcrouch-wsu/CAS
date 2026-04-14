@@ -1,26 +1,30 @@
 @import "tailwindcss";
 
+/* Washington State University–inspired palette (crimson is core WSU brand color) */
+@theme {
+  --color-wsu-crimson: #981e32;
+  --color-wsu-crimson-dark: #7a1828;
+  --color-wsu-crimson-light: #c42e48;
+  --color-wsu-gray: #5e6a71;
+  --color-wsu-gray-dark: #363b3f;
+  --color-wsu-cream: #f7f4f1;
+  --color-wsu-white: #ffffff;
+  --color-wsu-gold: #ffc61e;
+  --font-sans: var(--font-wsu-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: var(--color-wsu-cream);
+  --foreground: var(--color-wsu-gray-dark);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-wsu-cream);
+  color: var(--color-wsu-gray-dark);
+}
+
+/* Focus rings aligned with WSU crimson */
+:focus-visible {
+  outline: 2px solid var(--color-wsu-crimson);
+  outline-offset: 2px;
 }

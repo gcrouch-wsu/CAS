@@ -16,6 +16,8 @@ export type StoredPublicationBlob = {
   title: string;
   visible_columns: string[];
   default_group_key: string;
+  /** When false, public view hides organization-level Org Questions / Org Answers. */
+  show_org_on_public?: boolean;
   data: CasPublicationData;
   created_at: string;
   updated_at: string;
@@ -27,6 +29,7 @@ export type PublicationRow = {
   title: string;
   visible_columns: string[];
   default_group_key: string;
+  show_org_on_public: boolean;
   data: CasPublicationData;
   created_at: string;
   updated_at: string;
@@ -56,6 +59,7 @@ function blobToRow(parsed: StoredPublicationBlob): PublicationRow {
     title: parsed.title,
     visible_columns: parsed.visible_columns,
     default_group_key: parsed.default_group_key,
+    show_org_on_public: parsed.show_org_on_public !== false,
     data: parsed.data,
     created_at: parsed.created_at,
     updated_at: parsed.updated_at,
@@ -82,13 +86,15 @@ function mapToPublicGroup(
 export function toPublicPayload(row: PublicationRow): PublicPublicationPayload {
   const data = row.data;
   const keys = row.visible_columns ?? [];
+  const showOrg = row.show_org_on_public;
   return {
     title: row.title,
     slug: row.slug,
     defaultGroupKey: row.default_group_key || data.groups[0]?.groupKey || "",
     visibleColumnKeys: keys,
-    orgQuestions: data.orgQuestions,
-    orgAnswers: data.orgAnswers,
+    showOrgContent: showOrg,
+    orgQuestions: showOrg ? data.orgQuestions : [],
+    orgAnswers: showOrg ? data.orgAnswers : [],
     groups: data.groups.map((g) => mapToPublicGroup(g, keys)),
   };
 }
@@ -140,6 +146,7 @@ export async function createPublication(input: {
     title: input.title,
     visible_columns: vis,
     default_group_key: defaultGroupKey,
+    show_org_on_public: true,
     data: input.data,
     created_at: now,
     updated_at: now,
@@ -159,6 +166,7 @@ export async function updatePublication(
     title?: string;
     visibleColumnKeys?: string[];
     defaultGroupKey?: string;
+    showOrgOnPublic?: boolean;
   }
 ): Promise<PublicationRow | null> {
   const existing = await getPublicationBySlug(slug);
@@ -180,6 +188,10 @@ export async function updatePublication(
   if (patch.visibleColumnKeys) {
     visible = patch.visibleColumnKeys.filter((k) => opts.has(k));
   }
+  const showOrgOnPublic =
+    patch.showOrgOnPublic !== undefined
+      ? patch.showOrgOnPublic
+      : existing.show_org_on_public;
   const token = requireBlobToken();
   const body: StoredPublicationBlob = {
     version: 1,
@@ -187,6 +199,7 @@ export async function updatePublication(
     title,
     visible_columns: visible,
     default_group_key: defaultGroupKey,
+    show_org_on_public: showOrgOnPublic,
     data: existing.data,
     created_at: existing.created_at,
     updated_at: new Date().toISOString(),

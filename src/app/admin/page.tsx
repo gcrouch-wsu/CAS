@@ -54,32 +54,39 @@ export default function AdminHomePage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-10">
-      <div className="mb-6 flex justify-end">
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-wsu-gray-dark">
+            Publish CAS export
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-wsu-gray">
+            Upload a workbook from CAS. Next, you&apos;ll choose summary columns and public
+            options before sharing the link.
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => void logout()}
-          className="text-sm text-zinc-600 underline hover:text-zinc-900"
+          className="shrink-0 text-sm text-wsu-gray underline decoration-wsu-gray/30 hover:text-wsu-crimson"
         >
           Sign out
         </button>
       </div>
-      <h1 className="text-2xl font-semibold text-zinc-900">Publish CAS export</h1>
-      <p className="mt-2 text-sm text-zinc-600">
-        Choose your CAS workbook, then use the green button to upload and continue to
-        column settings.
-      </p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-6">
+      <form
+        onSubmit={onSubmit}
+        className="rounded-2xl border border-wsu-gray/10 bg-white p-6 shadow-sm"
+      >
         <div>
-          <span className="block text-sm font-semibold text-zinc-800">Excel file</span>
-          <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 transition hover:border-emerald-400 hover:bg-emerald-50/50">
-            <span className="text-center text-sm text-zinc-600">
+          <span className="text-sm font-semibold text-wsu-gray-dark">Excel file</span>
+          <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-wsu-gray/25 bg-wsu-cream/50 px-4 py-12 transition hover:border-wsu-crimson/40 hover:bg-wsu-crimson/[0.04]">
+            <span className="text-center text-sm text-wsu-gray">
               {file ? (
-                <span className="font-medium text-zinc-900">{file.name}</span>
+                <span className="font-medium text-wsu-gray-dark">{file.name}</span>
               ) : (
                 <>
-                  <span className="font-medium text-zinc-800">Click to choose a file</span>
-                  <span className="mt-1 block text-xs text-zinc-500">.xlsx from CAS</span>
+                  <span className="font-medium text-wsu-gray-dark">Click to choose a file</span>
+                  <span className="mt-1 block text-xs text-wsu-gray">.xlsx from CAS</span>
                 </>
               )}
             </span>
@@ -92,19 +99,19 @@ export default function AdminHomePage() {
           </label>
         </div>
 
-        <label className="block text-sm font-medium text-zinc-700">
+        <label className="mt-6 block text-sm font-medium text-wsu-gray-dark">
           Title (optional)
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Engineering CAS — 2026"
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 shadow-sm"
+            className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 px-3 py-2.5 text-wsu-gray-dark shadow-inner placeholder:text-wsu-gray/50 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/20"
           />
         </label>
 
         {error && (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {error}
           </p>
         )}
@@ -112,12 +119,12 @@ export default function AdminHomePage() {
         <button
           type="submit"
           disabled={loading || !file}
-          className="w-full rounded-xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white shadow-lg shadow-emerald-900/20 ring-2 ring-emerald-500/30 transition hover:bg-emerald-500 hover:ring-emerald-400/50 disabled:pointer-events-none disabled:opacity-40"
+          className="mt-8 w-full rounded-xl bg-wsu-crimson px-6 py-4 text-lg font-semibold text-white shadow-lg shadow-wsu-crimson/25 ring-2 ring-wsu-crimson/20 transition hover:bg-wsu-crimson-dark hover:ring-wsu-crimson/30 disabled:pointer-events-none disabled:opacity-40"
         >
           {loading ? "Uploading…" : "Upload & continue"}
         </button>
         {!file && (
-          <p className="text-center text-xs text-zinc-500">Select a file above to enable upload.</p>
+          <p className="mt-3 text-center text-xs text-wsu-gray">Select a file to enable upload.</p>
         )}
       </form>
     </div>

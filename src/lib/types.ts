@@ -35,6 +35,8 @@ export interface PublicPublicationPayload {
   slug: string;
   defaultGroupKey: string;
   visibleColumnKeys: string[];
+  /** When false, org-level questions/answers are omitted from the public page. */
+  showOrgContent: boolean;
   orgQuestions: Record<string, string>[];
   orgAnswers: Record<string, string>[];
   groups: PublicProgramGroup[];

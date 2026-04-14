@@ -2,31 +2,39 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="mx-auto flex min-h-full max-w-xl flex-col justify-center px-6 py-16 text-zinc-900">
-      <h1 className="text-3xl font-semibold tracking-tight">CAS program viewer</h1>
-      <p className="mt-4 text-zinc-600">
-        Publish a CAS Excel export to a read-only page with search and program selection.
-        Admin uses a username and password; public pages need only the link.
-      </p>
-      <nav className="mt-10 flex flex-col gap-3 text-sm font-medium">
-        <Link
-          href="/admin"
-          className="rounded-lg border border-zinc-300 bg-white px-4 py-3 text-center text-zinc-900 shadow-sm hover:bg-zinc-50"
-        >
-          Admin — upload CAS workbook
-        </Link>
-        <p className="text-xs text-zinc-500">
-          After publishing, open the public URL from the admin screen or use{" "}
-          <code className="rounded bg-zinc-100 px-1">/s/&lt;slug&gt;</code>.
+    <div className="mx-auto flex min-h-0 flex-1 max-w-2xl flex-col justify-center px-6 py-16">
+      <div className="rounded-2xl border border-wsu-gray/10 bg-white p-10 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-widest text-wsu-crimson">
+          Washington State University
         </p>
-      </nav>
-      <p className="mt-12 text-xs text-zinc-400">
-        Source repository:{" "}
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-wsu-gray-dark">
+          CAS program viewer
+        </h1>
+        <p className="mt-4 text-base leading-relaxed text-wsu-gray">
+          Publish a CAS Excel export to a read-only page with search and program selection.
+          Admin sign-in controls uploads and what appears on the public summary.
+        </p>
+        <nav className="mt-10 flex flex-col gap-3">
+          <Link
+            href="/admin/login"
+            className="inline-flex items-center justify-center rounded-xl bg-wsu-crimson px-5 py-3.5 text-center text-base font-semibold text-white shadow-md transition hover:bg-wsu-crimson-dark"
+          >
+            Admin sign in
+          </Link>
+          <p className="text-center text-xs text-wsu-gray">
+            After publishing, share the public link{" "}
+            <code className="rounded bg-wsu-cream px-1.5 py-0.5 font-mono text-wsu-gray-dark">
+              /s/&lt;slug&gt;
+            </code>
+          </p>
+        </nav>
+      </div>
+      <p className="mt-10 text-center text-xs text-wsu-gray">
         <a
           href="https://github.com/gcrouch-wsu/CAS"
-          className="text-zinc-500 underline hover:text-zinc-700"
+          className="underline decoration-wsu-gray/30 hover:text-wsu-crimson"
         >
-          github.com/gcrouch-wsu/CAS
+          Source on GitHub
         </a>
       </p>
     </div>

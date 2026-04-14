@@ -68,6 +68,8 @@ npm run dev
 2. Admin uploads a CAS `.xlsx` on **`/admin`**; the server writes **`cas-publications/<slug>.json`** to Blob.
 3. **`/s/[slug]`** and **`GET /api/public/[slug]`** read that JSON with **`BLOB_READ_WRITE_TOKEN`** on the server only.
 
+On **`/admin/[slug]`**, summary columns, default program, and whether to show **organization** questions/answers are edited as **drafts** until you click **Save changes** (then the public page updates). **Open public page** opens in a **new tab**.
+
 `robots` on `/s/[slug]` is **noindex** by default.
 
 ---

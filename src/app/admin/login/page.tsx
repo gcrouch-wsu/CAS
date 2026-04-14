@@ -39,54 +39,62 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-sm px-4 py-16">
-      <h1 className="text-2xl font-semibold text-zinc-900">Admin sign in</h1>
-      <p className="mt-2 text-sm text-zinc-600">
-        Use the username and password configured for this deployment.
-      </p>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
-        <label className="block text-sm font-medium text-zinc-700">
-          Username
-          <input
-            type="text"
-            name="username"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 shadow-sm"
-          />
-        </label>
-        <label className="block text-sm font-medium text-zinc-700">
-          Password
-          <input
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 shadow-sm"
-          />
-        </label>
-        {error && (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+    <div className="mx-auto flex min-h-0 flex-1 max-w-md flex-col justify-center px-4 py-12">
+      <div className="rounded-2xl border border-wsu-gray/10 bg-white p-8 shadow-sm">
+        <h1 className="text-2xl font-semibold tracking-tight text-wsu-gray-dark">Admin sign in</h1>
+        <p className="mt-2 text-sm text-wsu-gray">
+          Use the username and password configured for this deployment.
+        </p>
+        <form onSubmit={onSubmit} className="mt-8 space-y-4">
+          <label className="block text-sm font-medium text-wsu-gray-dark">
+            Username
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 px-3 py-2.5 text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/20"
+            />
+          </label>
+          <label className="block text-sm font-medium text-wsu-gray-dark">
+            Password
+            <input
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 px-3 py-2.5 text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/20"
+            />
+          </label>
+          {error && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {error}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-wsu-crimson py-3 text-sm font-semibold text-white shadow-md transition hover:bg-wsu-crimson-dark disabled:opacity-50"
+          >
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
 
 export default function AdminLoginPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-zinc-600">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center p-8 text-sm text-wsu-gray">
+          Loading…
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );

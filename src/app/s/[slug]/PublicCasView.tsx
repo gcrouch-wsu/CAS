@@ -43,39 +43,42 @@ export default function PublicCasView({
     [initial.groups, selectedKey]
   );
 
+  const showOrg =
+    initial.showOrgContent &&
+    (initial.orgQuestions.length > 0 || initial.orgAnswers.length > 0);
+
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 text-zinc-900">
-      <header className="mb-8 border-b border-zinc-200 pb-6">
-        <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          CAS program view
+    <div className="mx-auto max-w-4xl px-4 py-10">
+      <header className="mb-10 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-widest text-wsu-crimson">
+          Program view
         </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-wsu-gray-dark">
           {initial.title}
         </h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          Choose a degree or certificate to see requirements and materials from the
-          uploaded CAS export.
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-wsu-gray">
+          Search or select a degree or certificate to review requirements and materials from
+          the published CAS export.
         </p>
       </header>
 
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex-1 text-sm font-medium text-zinc-700">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1 text-sm font-medium text-wsu-gray-dark">
           Search
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type part of a program name…"
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-base shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+            placeholder="Program name…"
+            className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base text-wsu-gray-dark shadow-sm placeholder:text-wsu-gray/60 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
           />
         </label>
-        <label className="min-w-[min(100%,280px)] flex-1 text-sm font-medium text-zinc-700">
+        <label className="min-w-[min(100%,280px)] flex-1 text-sm font-medium text-wsu-gray-dark">
           Program
           <select
             value={selectedKey}
             onChange={(e) => setSelectedKey(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-base shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-            size={1}
+            className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base text-wsu-gray-dark shadow-sm focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
           >
             {filtered.map((g) => (
               <option key={g.groupKey} value={g.groupKey}>
@@ -87,29 +90,31 @@ export default function PublicCasView({
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-zinc-600">No programs match that search.</p>
+        <p className="rounded-lg border border-wsu-gray/15 bg-white px-4 py-6 text-wsu-gray">
+          No programs match that search.
+        </p>
       ) : selected ? (
         <ProgramDetail group={selected} />
       ) : null}
 
-      {(initial.orgQuestions.length > 0 || initial.orgAnswers.length > 0) && (
-        <section className="mt-12 border-t border-zinc-200 pt-8">
-          <h2 className="text-lg font-semibold text-zinc-900">Organization (shared)</h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            These rows come from the Org Questions / Org Answers sheets and apply by
-            cycle and organization, not by individual program.
+      {showOrg && (
+        <section className="mt-14 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-wsu-gray-dark">Organization (shared)</h2>
+          <p className="mt-2 text-sm leading-relaxed text-wsu-gray">
+            These rows come from the Org Questions / Org Answers sheets and apply by cycle
+            and organization, not by individual program.
           </p>
           {initial.orgQuestions.length > 0 && (
-            <details className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-              <summary className="cursor-pointer font-medium text-zinc-800">
+            <details className="mt-5 rounded-lg border border-wsu-gray/10 bg-wsu-cream/60 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-wsu-gray-dark">
                 Org questions ({initial.orgQuestions.length})
               </summary>
               <TableFromRecords rows={initial.orgQuestions} />
             </details>
           )}
           {initial.orgAnswers.length > 0 && (
-            <details className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-              <summary className="cursor-pointer font-medium text-zinc-800">
+            <details className="mt-4 rounded-lg border border-wsu-gray/10 bg-wsu-cream/60 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-wsu-gray-dark">
                 Org answers ({initial.orgAnswers.length})
               </summary>
               <TableFromRecords rows={initial.orgAnswers} />
@@ -121,24 +126,33 @@ export default function PublicCasView({
   );
 }
 
+function sectionTitle(text: string) {
+  return (
+    <h3 className="text-xs font-semibold uppercase tracking-widest text-wsu-crimson">
+      {text}
+    </h3>
+  );
+}
+
 function ProgramDetail({ group }: { group: PublicProgramGroup }) {
   return (
-    <article className="space-y-8">
+    <article className="space-y-10 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
       <div>
-        <h2 className="text-xl font-semibold text-zinc-900">{group.displayName}</h2>
-        <p className="mt-1 text-xs text-zinc-500">Group key: {group.groupKey}</p>
+        <h2 className="text-2xl font-semibold text-wsu-gray-dark">{group.displayName}</h2>
+        <p className="mt-1 font-mono text-xs text-wsu-gray">Group: {group.groupKey}</p>
       </div>
 
       {Object.keys(group.visibleShared).length > 0 && (
-        <section>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            Summary
-          </h3>
-          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+        <section className="space-y-3">
+          {sectionTitle("Summary")}
+          <dl className="grid gap-3 sm:grid-cols-2">
             {Object.entries(group.visibleShared).map(([k, v]) => (
-              <div key={k} className="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2">
-                <dt className="text-xs font-medium text-zinc-500">{k}</dt>
-                <dd className="text-sm text-zinc-900">{v || "—"}</dd>
+              <div
+                key={k}
+                className="rounded-lg border border-wsu-gray/10 bg-wsu-cream/40 px-3 py-3"
+              >
+                <dt className="text-xs font-medium text-wsu-gray">{k}</dt>
+                <dd className="mt-1 text-sm text-wsu-gray-dark">{v || "—"}</dd>
               </div>
             ))}
           </dl>
@@ -146,74 +160,67 @@ function ProgramDetail({ group }: { group: PublicProgramGroup }) {
       )}
 
       {group.offerings.length > 0 && (
-        <section>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            Application windows
-          </h3>
-          <ul className="mt-3 list-inside list-disc space-y-2 text-sm text-zinc-800">
+        <section className="space-y-3">
+          {sectionTitle("Application windows")}
+          <ul className="space-y-2 text-sm text-wsu-gray-dark">
             {group.offerings.map((o) => (
-              <li key={o.programId}>
+              <li
+                key={o.programId}
+                className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-wsu-gray/10 bg-wsu-cream/30 px-3 py-2"
+              >
                 <span className="font-medium">{o.termLine}</span>
-                <span className="ml-2 text-zinc-500">(Program ID: {o.programId})</span>
+                <span className="text-xs text-wsu-gray">Program ID: {o.programId}</span>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <section>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Recommendations
-        </h3>
+      <section className="space-y-3">
+        {sectionTitle("Recommendations")}
         {group.recommendationNote && (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950">
             {group.recommendationNote}
           </p>
         )}
         {group.recommendations && Object.keys(group.recommendations).length > 0 ? (
-          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+          <dl className="grid gap-3 sm:grid-cols-2">
             {Object.entries(group.recommendations).map(([k, v]) => (
-              <div key={k} className="rounded-md border border-zinc-100 px-3 py-2">
-                <dt className="text-xs font-medium text-zinc-500">{k}</dt>
-                <dd className="text-sm text-zinc-900">{v || "—"}</dd>
+              <div key={k} className="rounded-lg border border-wsu-gray/10 px-3 py-2">
+                <dt className="text-xs font-medium text-wsu-gray">{k}</dt>
+                <dd className="mt-1 text-sm text-wsu-gray-dark">{v || "—"}</dd>
               </div>
             ))}
           </dl>
         ) : (
-          <p className="mt-2 text-sm text-zinc-600">None in export for these programs.</p>
+          <p className="text-sm text-wsu-gray">None in export for these programs.</p>
         )}
       </section>
 
-      <section>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Program questions
-        </h3>
+      <section className="space-y-3">
+        {sectionTitle("Program questions")}
         {group.questions.length ? (
           <TableFromRecords rows={group.questions} />
         ) : (
-          <p className="mt-2 text-sm text-zinc-600">None in export.</p>
+          <p className="text-sm text-wsu-gray">None in export.</p>
         )}
       </section>
 
-      <section>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Answers
-        </h3>
+      <section className="space-y-3">
+        {sectionTitle("Answers")}
         {group.answers.length ? (
           <TableFromRecords rows={group.answers} />
         ) : (
-          <p className="mt-2 text-sm text-zinc-600">None in export.</p>
+          <p className="text-sm text-wsu-gray">None in export.</p>
         )}
       </section>
 
-      <section>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Documents
-        </h3>
+      <section className="space-y-3">
+        {sectionTitle("Documents")}
         {group.documents.length ? (
           <TableFromRecords rows={group.documents} />
         ) : (
-          <p className="mt-2 text-sm text-zinc-600">None in export.</p>
+          <p className="text-sm text-wsu-gray">None in export.</p>
         )}
       </section>
     </article>
@@ -228,22 +235,22 @@ function TableFromRecords({ rows }: { rows: Record<string, string>[] }) {
   }, [rows]);
   if (keys.length === 0) return null;
   return (
-    <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-      <table className="min-w-full divide-y divide-zinc-200 text-left text-sm">
-        <thead className="bg-zinc-100 text-xs font-medium uppercase text-zinc-600">
+    <div className="mt-3 overflow-x-auto rounded-lg border border-wsu-gray/15">
+      <table className="min-w-full divide-y divide-wsu-gray/10 text-left text-sm">
+        <thead className="bg-wsu-crimson/10 text-xs font-semibold uppercase tracking-wide text-wsu-gray-dark">
           <tr>
             {keys.map((k) => (
-              <th key={k} className="whitespace-nowrap px-3 py-2">
+              <th key={k} className="whitespace-nowrap px-3 py-2.5">
                 {k}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-zinc-100">
+        <tbody className="divide-y divide-wsu-gray/10 bg-white">
           {rows.map((r, i) => (
-            <tr key={i} className="bg-white">
+            <tr key={i} className="hover:bg-wsu-cream/40">
               {keys.map((k) => (
-                <td key={k} className="max-w-xs whitespace-pre-wrap px-3 py-2 text-zinc-800">
+                <td key={k} className="max-w-xs whitespace-pre-wrap px-3 py-2.5 text-wsu-gray-dark">
                   {r[k] ?? ""}
                 </td>
               ))}

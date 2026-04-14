@@ -9,6 +9,7 @@ const patchSchema = z.object({
   title: z.string().min(0).max(500).optional(),
   visibleColumnKeys: z.array(z.string()).optional(),
   defaultGroupKey: z.string().optional(),
+  showOrgOnPublic: z.boolean().optional(),
 });
 
 export async function GET(
@@ -31,6 +32,7 @@ export async function GET(
     title: row.title,
     visibleColumnKeys: row.visible_columns,
     defaultGroupKey: row.default_group_key,
+    showOrgOnPublic: row.show_org_on_public,
     summaryColumnOptions: row.data.summaryColumnOptions,
     groupKeys: row.data.groups.map((g) => ({
       key: g.groupKey,
@@ -79,5 +81,6 @@ export async function PATCH(
     title: updated.title,
     visibleColumnKeys: updated.visible_columns,
     defaultGroupKey: updated.default_group_key,
+    showOrgOnPublic: updated.show_org_on_public,
   });
 }
