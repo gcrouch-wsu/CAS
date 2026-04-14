@@ -7,6 +7,8 @@ export interface TermFieldSetting {
   key: string;
   label: string;
   visible: boolean;
+  /** When true, this field’s value is included in the application window card title (e.g. Start Term · Start Year). */
+  show_in_heading?: boolean;
 }
 
 export interface CasOffering {
@@ -49,6 +51,8 @@ export interface PublicPublicationPayload {
   defaultGroupKey: string;
   visibleColumnKeys: string[];
   showOrgContent: boolean;
+  /** When true, show CAS Program ID on application window cards (off by default). */
+  showProgramIdOnPublic: boolean;
   termFieldSettings: TermFieldSetting[];
   /** Ordered keys for program question table columns on the public page. */
   visibleQuestionColumnKeys: string[];

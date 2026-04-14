@@ -352,6 +352,7 @@ export function deriveDefaultTermFieldSettings(data: CasPublicationData): TermFi
     key,
     label: key === "__summary" ? "Application window" : key,
     visible: true,
+    show_in_heading: key === "Start Term" || key === "Start Year",
   }));
 }
 
@@ -605,7 +606,14 @@ export function mergeTermFieldSettings(
   return defaults.map((d) => {
     const p = prevMap.get(d.key);
     if (!p) return { ...d };
-    return { key: d.key, label: p.label.trim() || d.label, visible: p.visible };
+    const show_in_heading =
+      typeof p.show_in_heading === "boolean" ? p.show_in_heading : Boolean(d.show_in_heading);
+    return {
+      key: d.key,
+      label: p.label.trim() || d.label,
+      visible: p.visible,
+      show_in_heading,
+    };
   });
 }
 

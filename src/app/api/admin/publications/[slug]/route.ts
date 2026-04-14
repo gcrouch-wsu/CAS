@@ -9,6 +9,7 @@ const termFieldSettingSchema = z.object({
   key: z.string(),
   label: z.string(),
   visible: z.boolean(),
+  show_in_heading: z.boolean().optional(),
 });
 
 const patchSchema = z.object({
@@ -16,6 +17,7 @@ const patchSchema = z.object({
   visibleColumnKeys: z.array(z.string()).optional(),
   defaultGroupKey: z.string().optional(),
   showOrgOnPublic: z.boolean().optional(),
+  showProgramIdOnPublic: z.boolean().optional(),
   visibleQuestionColumns: z.array(z.string()).optional(),
   visibleAnswerColumns: z.array(z.string()).optional(),
   visibleDocumentColumns: z.array(z.string()).optional(),
@@ -43,6 +45,7 @@ export async function GET(
     visibleColumnKeys: row.visible_columns,
     defaultGroupKey: row.default_group_key,
     showOrgOnPublic: row.show_org_on_public,
+    showProgramIdOnPublic: row.show_program_id_on_public,
     summaryColumnOptions: row.data.summaryColumnOptions,
     questionColumnOptions: row.data.questionColumnOptions,
     answerColumnOptions: row.data.answerColumnOptions,
@@ -99,6 +102,7 @@ export async function PATCH(
     visibleColumnKeys: updated.visible_columns,
     defaultGroupKey: updated.default_group_key,
     showOrgOnPublic: updated.show_org_on_public,
+    showProgramIdOnPublic: updated.show_program_id_on_public,
     visibleQuestionColumns: updated.visible_question_columns,
     visibleAnswerColumns: updated.visible_answer_columns,
     visibleDocumentColumns: updated.visible_document_columns,

@@ -36,6 +36,8 @@ export type StoredPublicationBlob = {
   visible_document_columns?: string[];
   /** Labels and visibility for application-window bullets. */
   term_field_settings?: TermFieldSetting[];
+  /** When true, show Program ID on public application window cards. */
+  show_program_id_on_public?: boolean;
   data: CasPublicationData;
   created_at: string;
   updated_at: string;
@@ -52,6 +54,7 @@ export type PublicationRow = {
   visible_answer_columns: string[];
   visible_document_columns: string[];
   term_field_settings: TermFieldSetting[];
+  show_program_id_on_public: boolean;
   data: CasPublicationData;
   created_at: string;
   updated_at: string;
@@ -107,6 +110,7 @@ function blobToRow(parsed: StoredPublicationBlob): PublicationRow {
     visible_answer_columns,
     visible_document_columns,
     term_field_settings,
+    show_program_id_on_public: parsed.show_program_id_on_public === true,
     data,
     created_at: parsed.created_at,
     updated_at: parsed.updated_at,
@@ -158,6 +162,7 @@ export function toPublicPayload(row: PublicationRow): PublicPublicationPayload {
     visibleColumnKeys: keys,
     showOrgContent: showOrg,
     termFieldSettings: row.term_field_settings,
+    showProgramIdOnPublic: row.show_program_id_on_public,
     visibleQuestionColumnKeys: qk,
     visibleAnswerColumnKeys: ak,
     visibleDocumentColumnKeys: dk,
@@ -220,6 +225,7 @@ export async function createPublication(input: {
     visible_answer_columns: ui.visible_answer_columns,
     visible_document_columns: ui.visible_document_columns,
     term_field_settings: ui.term_field_settings,
+    show_program_id_on_public: false,
     data,
     created_at: now,
     updated_at: now,
@@ -239,6 +245,7 @@ export async function updatePublication(
     visibleColumnKeys?: string[];
     defaultGroupKey?: string;
     showOrgOnPublic?: boolean;
+    showProgramIdOnPublic?: boolean;
     visibleQuestionColumns?: string[];
     visibleAnswerColumns?: string[];
     visibleDocumentColumns?: string[];
@@ -268,6 +275,10 @@ export async function updatePublication(
     patch.showOrgOnPublic !== undefined
       ? patch.showOrgOnPublic
       : existing.show_org_on_public;
+  const show_program_id_on_public =
+    patch.showProgramIdOnPublic !== undefined
+      ? patch.showProgramIdOnPublic
+      : existing.show_program_id_on_public;
 
   const qOpts = new Set(existing.data.questionColumnOptions);
   const aOpts = new Set(existing.data.answerColumnOptions);
@@ -303,6 +314,7 @@ export async function updatePublication(
       key: t.key,
       label: String(t.label ?? t.key).slice(0, 200),
       visible: Boolean(t.visible),
+      show_in_heading: t.show_in_heading === true,
     }));
     term_field_settings = mergeTermFieldSettings(sanitized, defaults);
   }
@@ -315,6 +327,7 @@ export async function updatePublication(
     visible_columns: visible,
     default_group_key: defaultGroupKey,
     show_org_on_public: showOrgOnPublic,
+    show_program_id_on_public,
     visible_question_columns,
     visible_answer_columns,
     visible_document_columns,
@@ -385,6 +398,7 @@ export async function mergePublicationFromUpload(
         : defaultVisibleColumns(merged.summaryColumnOptions),
     default_group_key,
     show_org_on_public: existing.show_org_on_public,
+    show_program_id_on_public: existing.show_program_id_on_public,
     visible_question_columns,
     visible_answer_columns,
     visible_document_columns,

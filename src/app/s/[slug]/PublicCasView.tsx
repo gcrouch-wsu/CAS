@@ -8,6 +8,50 @@ import type {
   TermFieldSetting,
 } from "@/lib/types";
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Higher score = better match for search ordering and auto-selection. */
+function rankGroupForQuery(g: PublicProgramGroup, ql: string): number {
+  const name = g.displayName.toLowerCase();
+  const gk = g.groupKey.toLowerCase();
+  let best = -1e9;
+  if (name.includes(ql)) {
+    let score = 2000 - name.indexOf(ql);
+    if (name.startsWith(ql)) score += 400;
+    try {
+      if (new RegExp(`(^|[^a-z0-9])${escapeRe(ql)}`, "i").test(g.displayName)) score += 120;
+    } catch {
+      /* ignore */
+    }
+    if (!/\b(cert|certificate)\b/i.test(ql) && /\b(certificate|cert\.)\b/i.test(name)) score -= 160;
+    if (/\b(master|masters|mba|ph\.?d\.|edd|doctoral|graduate)\b/i.test(name)) score += 100;
+    best = Math.max(best, score);
+  }
+  if (gk.includes(ql)) best = Math.max(best, 600 - gk.indexOf(ql));
+  return best;
+}
+
+function sortGroupsForSearch(groups: PublicProgramGroup[], rawQuery: string): PublicProgramGroup[] {
+  const ql = rawQuery.trim().toLowerCase();
+  if (!ql) {
+    return [...groups].sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" })
+    );
+  }
+  return [...groups]
+    .filter(
+      (g) => g.displayName.toLowerCase().includes(ql) || g.groupKey.toLowerCase().includes(ql)
+    )
+    .sort((a, b) => {
+      const ra = rankGroupForQuery(a, ql);
+      const rb = rankGroupForQuery(b, ql);
+      if (rb !== ra) return rb - ra;
+      return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+    });
+}
+
 function pickGroup(
   groups: PublicProgramGroup[],
   key: string
@@ -27,21 +71,23 @@ export default function PublicCasView({
       : initial.groups[0]?.groupKey ?? ""
   );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return initial.groups;
-    return initial.groups.filter(
-      (g) =>
-        g.displayName.toLowerCase().includes(q) ||
-        g.groupKey.toLowerCase().includes(q)
-    );
-  }, [initial.groups, query]);
+  const filtered = useMemo(
+    () => sortGroupsForSearch(initial.groups, query),
+    [initial.groups, query]
+  );
 
   useEffect(() => {
-    if (!filtered.some((g) => g.groupKey === selectedKey)) {
-      setSelectedKey(filtered[0]?.groupKey ?? "");
+    const ql = query.trim().toLowerCase();
+    if (!ql) {
+      setSelectedKey((prev) =>
+        initial.groups.some((g) => g.groupKey === prev)
+          ? prev
+          : initial.groups[0]?.groupKey ?? ""
+      );
+      return;
     }
-  }, [filtered, selectedKey]);
+    setSelectedKey(filtered[0]?.groupKey ?? "");
+  }, [query, filtered, initial.groups]);
 
   const selected = useMemo(
     () => pickGroup(initial.groups, selectedKey),
@@ -62,8 +108,9 @@ export default function PublicCasView({
           {initial.title}
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-wsu-gray">
-          Search or select a degree or certificate to review requirements and materials from
-          the published CAS export.
+          Search or select a program to review requirements and materials. While you have text in
+          the search box, the list is ordered with stronger matches first and the top match is
+          selected automatically.
         </p>
       </header>
 
@@ -102,6 +149,7 @@ export default function PublicCasView({
         <ProgramDetail
           group={selected}
           termFieldSettings={initial.termFieldSettings}
+          showProgramIdOnPublic={initial.showProgramIdOnPublic}
           questionColumns={initial.visibleQuestionColumnKeys}
           answerColumns={initial.visibleAnswerColumnKeys}
           documentColumns={initial.visibleDocumentColumnKeys}
@@ -149,6 +197,17 @@ function termSettingMap(settings: TermFieldSetting[]): Map<string, TermFieldSett
   return new Map(settings.map((s) => [s.key, s]));
 }
 
+function applicationWindowHeading(o: CasOffering, settings: TermFieldSetting[]): string | null {
+  const partMap = new Map(o.termParts.map((p) => [p.key, p.value]));
+  const segs: string[] = [];
+  for (const s of settings) {
+    if (!s.show_in_heading) continue;
+    const v = partMap.get(s.key)?.trim();
+    if (v) segs.push(v);
+  }
+  return segs.length > 0 ? segs.join(" · ") : null;
+}
+
 function visibleTermBullets(o: CasOffering, settings: TermFieldSetting[]) {
   const map = termSettingMap(settings);
   return o.termParts
@@ -156,6 +215,7 @@ function visibleTermBullets(o: CasOffering, settings: TermFieldSetting[]) {
       const s = map.get(p.key);
       const visible = s ? s.visible : true;
       if (!visible) return null;
+      if (s?.show_in_heading) return null;
       const label = (s?.label ?? p.key).trim() || p.key;
       return { label, value: p.value };
     })
@@ -165,12 +225,14 @@ function visibleTermBullets(o: CasOffering, settings: TermFieldSetting[]) {
 function ProgramDetail({
   group,
   termFieldSettings,
+  showProgramIdOnPublic,
   questionColumns,
   answerColumns,
   documentColumns,
 }: {
   group: PublicProgramGroup;
   termFieldSettings: TermFieldSetting[];
+  showProgramIdOnPublic: boolean;
   questionColumns: string[];
   answerColumns: string[];
   documentColumns: string[];
@@ -204,13 +266,18 @@ function ProgramDetail({
           {sectionTitle("Application windows")}
           <ul className="space-y-3 text-sm text-wsu-gray-dark">
             {group.offerings.map((o) => {
+              const heading = applicationWindowHeading(o, termFieldSettings);
               const bullets = visibleTermBullets(o, termFieldSettings);
+              const titleLine = heading ?? o.termLine;
               return (
                 <li
                   key={o.programId}
                   className="rounded-lg border border-wsu-gray/10 bg-wsu-cream/30 px-3 py-3"
                 >
-                  <p className="text-xs text-wsu-gray">Program ID: {o.programId}</p>
+                  <p className="text-base font-semibold text-wsu-gray-dark">{titleLine}</p>
+                  {showProgramIdOnPublic && (
+                    <p className="mt-1 text-xs text-wsu-gray">Program ID: {o.programId}</p>
+                  )}
                   {bullets.length > 0 ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
                       {bullets.map((b, i) => (
@@ -220,9 +287,7 @@ function ProgramDetail({
                         </li>
                       ))}
                     </ul>
-                  ) : (
-                    <p className="mt-2 text-wsu-gray-dark">{o.termLine}</p>
-                  )}
+                  ) : null}
                 </li>
               );
             })}

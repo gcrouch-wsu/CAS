@@ -19,6 +19,7 @@ type ConfigResponse = {
   visibleAnswerColumns: string[];
   visibleDocumentColumns: string[];
   termFieldSettings: TermFieldSetting[];
+  showProgramIdOnPublic: boolean;
   groupKeys: { key: string; label: string }[];
   sourceFileName: string;
 };
@@ -34,7 +35,12 @@ function termPayloadEqual(a: TermFieldSetting[], b: TermFieldSetting[]): boolean
   const norm = (x: TermFieldSetting[]) =>
     [...x]
       .sort((p, q) => p.key.localeCompare(q.key))
-      .map((t) => ({ key: t.key, label: t.label, visible: t.visible }));
+      .map((t) => ({
+        key: t.key,
+        label: t.label,
+        visible: t.visible,
+        show_in_heading: t.show_in_heading === true,
+      }));
   return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 }
 
@@ -50,6 +56,7 @@ export default function AdminPublicationPage() {
   const [draftAnswerCols, setDraftAnswerCols] = useState<string[]>([]);
   const [draftDocumentCols, setDraftDocumentCols] = useState<string[]>([]);
   const [draftTermSettings, setDraftTermSettings] = useState<TermFieldSetting[]>([]);
+  const [draftShowProgramId, setDraftShowProgramId] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,6 +74,7 @@ export default function AdminPublicationPage() {
     setDraftAnswerCols([...c.visibleAnswerColumns]);
     setDraftDocumentCols([...c.visibleDocumentColumns]);
     setDraftTermSettings(c.termFieldSettings.map((t) => ({ ...t })));
+    setDraftShowProgramId(c.showProgramIdOnPublic);
   }, []);
 
   const loadConfig = useCallback(async () => {
@@ -111,7 +119,8 @@ export default function AdminPublicationPage() {
       !sortedKeysEqual(draftQuestionCols, saved.visibleQuestionColumns) ||
       !sortedKeysEqual(draftAnswerCols, saved.visibleAnswerColumns) ||
       !sortedKeysEqual(draftDocumentCols, saved.visibleDocumentColumns) ||
-      !termPayloadEqual(draftTermSettings, saved.termFieldSettings)
+      !termPayloadEqual(draftTermSettings, saved.termFieldSettings) ||
+      draftShowProgramId !== saved.showProgramIdOnPublic
     );
   }, [
     saved,
@@ -122,6 +131,7 @@ export default function AdminPublicationPage() {
     draftAnswerCols,
     draftDocumentCols,
     draftTermSettings,
+    draftShowProgramId,
   ]);
 
   async function logout() {
@@ -144,6 +154,7 @@ export default function AdminPublicationPage() {
           visibleColumnKeys: draftColumns,
           defaultGroupKey: draftDefault,
           showOrgOnPublic: draftShowOrg,
+          showProgramIdOnPublic: draftShowProgramId,
           visibleQuestionColumns: draftQuestionCols,
           visibleAnswerColumns: draftAnswerCols,
           visibleDocumentColumns: draftDocumentCols,
@@ -176,6 +187,10 @@ export default function AdminPublicationPage() {
         visibleAnswerColumns: body.visibleAnswerColumns ?? saved.visibleAnswerColumns,
         visibleDocumentColumns: body.visibleDocumentColumns ?? saved.visibleDocumentColumns,
         termFieldSettings: body.termFieldSettings ?? saved.termFieldSettings,
+        showProgramIdOnPublic:
+          body.showProgramIdOnPublic !== undefined
+            ? Boolean(body.showProgramIdOnPublic)
+            : saved.showProgramIdOnPublic,
       });
       setSaveMessage("Saved. Public page now uses these settings.");
       window.setTimeout(() => setSaveMessage(null), 5000);
@@ -262,6 +277,7 @@ export default function AdminPublicationPage() {
     setDraftAnswerCols([...saved.visibleAnswerColumns]);
     setDraftDocumentCols([...saved.visibleDocumentColumns]);
     setDraftTermSettings(saved.termFieldSettings.map((t) => ({ ...t })));
+    setDraftShowProgramId(saved.showProgramIdOnPublic);
     setSaveMessage(null);
   }
 
@@ -292,6 +308,12 @@ export default function AdminPublicationPage() {
   function setTermVisible(key: string, visible: boolean) {
     setDraftTermSettings((prev) =>
       prev.map((t) => (t.key === key ? { ...t, visible } : t))
+    );
+  }
+
+  function setTermHeading(key: string, show_in_heading: boolean) {
+    setDraftTermSettings((prev) =>
+      prev.map((t) => (t.key === key ? { ...t, show_in_heading } : t))
     );
   }
 
@@ -479,17 +501,31 @@ export default function AdminPublicationPage() {
               Application window lines (public)
             </h2>
             <p className="mt-2 text-sm text-wsu-gray">
-              Each line appears as a bullet under Application windows. Relabel for your audience
-              (for example &quot;CAS import&quot; instead of &quot;Open Date&quot;) and hide fields
-              you do not need.
+              Check “In title” for each CAS column that should form the friendly line at the top of
+              an application window (for example Start Term, then Start Year — order follows this
+              list). “In bullets” controls the detailed list under that line. You can relabel any
+              row (for example “CAS import” instead of “Open Date”).
             </p>
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-wsu-gray/15 bg-wsu-cream/60 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={draftShowProgramId}
+                disabled={saving}
+                onChange={(e) => setDraftShowProgramId(e.target.checked)}
+                className="mt-1 size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
+              />
+              <span className="text-sm text-wsu-gray-dark">
+                Show CAS Program ID on the public page (off by default; use only if readers need
+                the internal ID).
+              </span>
+            </label>
             <ul className="mt-4 space-y-3">
               {draftTermSettings.map((t) => (
                 <li
                   key={t.key}
                   className="rounded-lg border border-wsu-gray/15 bg-wsu-cream/40 p-3"
                 >
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-4">
                     <label className="flex items-center gap-2 text-sm text-wsu-gray-dark">
                       <input
                         type="checkbox"
@@ -498,7 +534,17 @@ export default function AdminPublicationPage() {
                         onChange={(e) => setTermVisible(t.key, e.target.checked)}
                         className="size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
                       />
-                      Show
+                      In bullets
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-wsu-gray-dark">
+                      <input
+                        type="checkbox"
+                        checked={t.show_in_heading === true}
+                        disabled={saving}
+                        onChange={(e) => setTermHeading(t.key, e.target.checked)}
+                        className="size-4 rounded border-wsu-gray text-wsu-crimson focus:ring-wsu-crimson"
+                      />
+                      In title
                     </label>
                     <span className="text-xs font-mono text-wsu-gray">({t.key})</span>
                   </div>
