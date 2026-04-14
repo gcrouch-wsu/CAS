@@ -148,6 +148,7 @@ export async function createPublication(input: {
     access: getBlobAccessMode(),
     token,
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: "application/json",
   });
 }
@@ -194,6 +195,7 @@ export async function updatePublication(
     access: getBlobAccessMode(),
     token,
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: "application/json",
   });
   return getPublicationBySlug(slug);

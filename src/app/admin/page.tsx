@@ -65,10 +65,33 @@ export default function AdminHomePage() {
       </div>
       <h1 className="text-2xl font-semibold text-zinc-900">Publish CAS export</h1>
       <p className="mt-2 text-sm text-zinc-600">
-        Upload a CAS workbook (.xlsx). You will set which summary columns are public on
-        the next screen.
+        Choose your CAS workbook, then use the green button to upload and continue to
+        column settings.
       </p>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
+
+      <form onSubmit={onSubmit} className="mt-8 space-y-6">
+        <div>
+          <span className="block text-sm font-semibold text-zinc-800">Excel file</span>
+          <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 transition hover:border-emerald-400 hover:bg-emerald-50/50">
+            <span className="text-center text-sm text-zinc-600">
+              {file ? (
+                <span className="font-medium text-zinc-900">{file.name}</span>
+              ) : (
+                <>
+                  <span className="font-medium text-zinc-800">Click to choose a file</span>
+                  <span className="mt-1 block text-xs text-zinc-500">.xlsx from CAS</span>
+                </>
+              )}
+            </span>
+            <input
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="sr-only"
+            />
+          </label>
+        </div>
+
         <label className="block text-sm font-medium text-zinc-700">
           Title (optional)
           <input
@@ -79,27 +102,23 @@ export default function AdminHomePage() {
             className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 shadow-sm"
           />
         </label>
-        <label className="block text-sm font-medium text-zinc-700">
-          Excel file
-          <input
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="mt-1 block w-full text-sm text-zinc-600"
-          />
-        </label>
+
         {error && (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {error}
           </p>
         )}
+
         <button
           type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          disabled={loading || !file}
+          className="w-full rounded-xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white shadow-lg shadow-emerald-900/20 ring-2 ring-emerald-500/30 transition hover:bg-emerald-500 hover:ring-emerald-400/50 disabled:pointer-events-none disabled:opacity-40"
         >
-          {loading ? "Uploading…" : "Upload and continue"}
+          {loading ? "Uploading…" : "Upload & continue"}
         </button>
+        {!file && (
+          <p className="text-center text-xs text-zinc-500">Select a file above to enable upload.</p>
+        )}
       </form>
     </div>
   );
