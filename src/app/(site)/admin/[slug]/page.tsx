@@ -20,9 +20,29 @@ type ConfigResponse = {
   visibleDocumentColumns: string[];
   termFieldSettings: TermFieldSetting[];
   showProgramIdOnPublic: boolean;
+  publicHeaderTitle: string;
+  publicHeaderSubtitle: string;
+  publicHeaderLogoUrl: string;
+  publicHeaderTitleHref: string;
+  publicHeroEyebrow: string;
+  publicHeroBody: string;
+  programDisplayNameStripSuffixes: string[];
   groupKeys: { key: string; label: string }[];
   sourceFileName: string;
 };
+
+function parseProgramStripLines(s: string): string[] {
+  return s
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 100);
+}
+
+function programStripListsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
 
 function sortedKeysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -57,6 +77,13 @@ export default function AdminPublicationPage() {
   const [draftDocumentCols, setDraftDocumentCols] = useState<string[]>([]);
   const [draftTermSettings, setDraftTermSettings] = useState<TermFieldSetting[]>([]);
   const [draftShowProgramId, setDraftShowProgramId] = useState(false);
+  const [draftPublicHeaderTitle, setDraftPublicHeaderTitle] = useState("");
+  const [draftPublicHeaderSubtitle, setDraftPublicHeaderSubtitle] = useState("");
+  const [draftPublicHeaderLogoUrl, setDraftPublicHeaderLogoUrl] = useState("");
+  const [draftPublicHeaderTitleHref, setDraftPublicHeaderTitleHref] = useState("");
+  const [draftPublicHeroEyebrow, setDraftPublicHeroEyebrow] = useState("");
+  const [draftPublicHeroBody, setDraftPublicHeroBody] = useState("");
+  const [draftProgramStripText, setDraftProgramStripText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +102,13 @@ export default function AdminPublicationPage() {
     setDraftDocumentCols([...c.visibleDocumentColumns]);
     setDraftTermSettings(c.termFieldSettings.map((t) => ({ ...t })));
     setDraftShowProgramId(c.showProgramIdOnPublic);
+    setDraftPublicHeaderTitle(c.publicHeaderTitle);
+    setDraftPublicHeaderSubtitle(c.publicHeaderSubtitle);
+    setDraftPublicHeaderLogoUrl(c.publicHeaderLogoUrl);
+    setDraftPublicHeaderTitleHref(c.publicHeaderTitleHref);
+    setDraftPublicHeroEyebrow(c.publicHeroEyebrow);
+    setDraftPublicHeroBody(c.publicHeroBody);
+    setDraftProgramStripText(c.programDisplayNameStripSuffixes.join("\n"));
   }, []);
 
   const loadConfig = useCallback(async () => {
@@ -120,7 +154,17 @@ export default function AdminPublicationPage() {
       !sortedKeysEqual(draftAnswerCols, saved.visibleAnswerColumns) ||
       !sortedKeysEqual(draftDocumentCols, saved.visibleDocumentColumns) ||
       !termPayloadEqual(draftTermSettings, saved.termFieldSettings) ||
-      draftShowProgramId !== saved.showProgramIdOnPublic
+      draftShowProgramId !== saved.showProgramIdOnPublic ||
+      draftPublicHeaderTitle !== saved.publicHeaderTitle ||
+      draftPublicHeaderSubtitle !== saved.publicHeaderSubtitle ||
+      draftPublicHeaderLogoUrl !== saved.publicHeaderLogoUrl ||
+      draftPublicHeaderTitleHref !== saved.publicHeaderTitleHref ||
+      draftPublicHeroEyebrow !== saved.publicHeroEyebrow ||
+      draftPublicHeroBody !== saved.publicHeroBody ||
+      !programStripListsEqual(
+        parseProgramStripLines(draftProgramStripText),
+        saved.programDisplayNameStripSuffixes
+      )
     );
   }, [
     saved,
@@ -132,6 +176,13 @@ export default function AdminPublicationPage() {
     draftDocumentCols,
     draftTermSettings,
     draftShowProgramId,
+    draftPublicHeaderTitle,
+    draftPublicHeaderSubtitle,
+    draftPublicHeaderLogoUrl,
+    draftPublicHeaderTitleHref,
+    draftPublicHeroEyebrow,
+    draftPublicHeroBody,
+    draftProgramStripText,
   ]);
 
   async function logout() {
@@ -159,6 +210,13 @@ export default function AdminPublicationPage() {
           visibleAnswerColumns: draftAnswerCols,
           visibleDocumentColumns: draftDocumentCols,
           termFieldSettings: draftTermSettings,
+          publicHeaderTitle: draftPublicHeaderTitle,
+          publicHeaderSubtitle: draftPublicHeaderSubtitle,
+          publicHeaderLogoUrl: draftPublicHeaderLogoUrl,
+          publicHeaderTitleHref: draftPublicHeaderTitleHref,
+          publicHeroEyebrow: draftPublicHeroEyebrow,
+          publicHeroBody: draftPublicHeroBody,
+          programDisplayNameStripSuffixes: parseProgramStripLines(draftProgramStripText),
         }),
       });
       if (res.status === 401) {
@@ -191,6 +249,14 @@ export default function AdminPublicationPage() {
           body.showProgramIdOnPublic !== undefined
             ? Boolean(body.showProgramIdOnPublic)
             : saved.showProgramIdOnPublic,
+        publicHeaderTitle: body.publicHeaderTitle ?? saved.publicHeaderTitle,
+        publicHeaderSubtitle: body.publicHeaderSubtitle ?? saved.publicHeaderSubtitle,
+        publicHeaderLogoUrl: body.publicHeaderLogoUrl ?? saved.publicHeaderLogoUrl,
+        publicHeaderTitleHref: body.publicHeaderTitleHref ?? saved.publicHeaderTitleHref,
+        publicHeroEyebrow: body.publicHeroEyebrow ?? saved.publicHeroEyebrow,
+        publicHeroBody: body.publicHeroBody ?? saved.publicHeroBody,
+        programDisplayNameStripSuffixes:
+          body.programDisplayNameStripSuffixes ?? saved.programDisplayNameStripSuffixes,
       });
       setSaveMessage("Saved. Public page now uses these settings.");
       window.setTimeout(() => setSaveMessage(null), 5000);
@@ -278,6 +344,13 @@ export default function AdminPublicationPage() {
     setDraftDocumentCols([...saved.visibleDocumentColumns]);
     setDraftTermSettings(saved.termFieldSettings.map((t) => ({ ...t })));
     setDraftShowProgramId(saved.showProgramIdOnPublic);
+    setDraftPublicHeaderTitle(saved.publicHeaderTitle);
+    setDraftPublicHeaderSubtitle(saved.publicHeaderSubtitle);
+    setDraftPublicHeaderLogoUrl(saved.publicHeaderLogoUrl);
+    setDraftPublicHeaderTitleHref(saved.publicHeaderTitleHref);
+    setDraftPublicHeroEyebrow(saved.publicHeroEyebrow);
+    setDraftPublicHeroBody(saved.publicHeroBody);
+    setDraftProgramStripText(saved.programDisplayNameStripSuffixes.join("\n"));
     setSaveMessage(null);
   }
 
@@ -413,6 +486,103 @@ export default function AdminPublicationPage() {
             {mergeMessage && (
               <p className="mt-3 text-sm text-emerald-800">{mergeMessage}</p>
             )}
+          </section>
+
+          <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-wsu-gray">
+              Public link: header &amp; intro
+            </h2>
+            <p className="mt-2 text-sm text-wsu-gray">
+              These settings apply only to the public viewer at{" "}
+              <code className="rounded bg-wsu-cream px-1 py-0.5 font-mono text-xs text-wsu-gray-dark">
+                /s/{slug}
+              </code>
+              . Leave a field empty to use the built-in default for that line. The publication title
+              above is still edited when you upload; it appears as the large heading under the intro
+              eyebrow.
+            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Top bar title
+                <input
+                  type="text"
+                  value={draftPublicHeaderTitle}
+                  disabled={saving}
+                  onChange={(e) => setDraftPublicHeaderTitle(e.target.value)}
+                  placeholder="CAS program viewer"
+                  className="mt-1.5 w-full rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 text-sm text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Top bar subtitle (e.g. institution)
+                <input
+                  type="text"
+                  value={draftPublicHeaderSubtitle}
+                  disabled={saving}
+                  onChange={(e) => setDraftPublicHeaderSubtitle(e.target.value)}
+                  placeholder="Washington State University"
+                  className="mt-1.5 w-full rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 text-sm text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Logo image URL (optional)
+                <input
+                  type="url"
+                  value={draftPublicHeaderLogoUrl}
+                  disabled={saving}
+                  onChange={(e) => setDraftPublicHeaderLogoUrl(e.target.value)}
+                  placeholder="https://…"
+                  className="mt-1.5 w-full rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 text-sm text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Top bar title link (href)
+                <input
+                  type="text"
+                  value={draftPublicHeaderTitleHref}
+                  disabled={saving}
+                  onChange={(e) => setDraftPublicHeaderTitleHref(e.target.value)}
+                  placeholder="/"
+                  className="mt-1.5 w-full rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 text-sm text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Intro card eyebrow (small caps line above the title)
+                <input
+                  type="text"
+                  value={draftPublicHeroEyebrow}
+                  disabled={saving}
+                  onChange={(e) => setDraftPublicHeroEyebrow(e.target.value)}
+                  placeholder="Program view"
+                  className="mt-1.5 w-full rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 text-sm text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Intro card body (instructions; use a blank line between paragraphs;{" "}
+                <code className="font-mono text-xs">https://</code> links become clickable)
+                <textarea
+                  value={draftPublicHeroBody}
+                  disabled={saving}
+                  onChange={(e) => setDraftPublicHeroBody(e.target.value)}
+                  rows={5}
+                  className="mt-1.5 w-full resize-y rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 text-sm text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+              <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
+                Program names on the public page: strip these suffixes from the end (one per line).
+                Longer lines are tried first each pass (e.g.{" "}
+                <code className="font-mono text-xs">, Online (Spring)</code> before{" "}
+                <code className="font-mono text-xs">, Online</code>).
+                <textarea
+                  value={draftProgramStripText}
+                  disabled={saving}
+                  onChange={(e) => setDraftProgramStripText(e.target.value)}
+                  rows={8}
+                  spellCheck={false}
+                  className="mt-1.5 w-full resize-y rounded-lg border border-wsu-gray/25 bg-wsu-cream px-3 py-2 font-mono text-xs text-wsu-gray-dark shadow-inner focus:border-wsu-crimson focus:outline-none focus:ring-1 focus:ring-wsu-crimson"
+                />
+              </label>
+            </div>
           </section>
 
           <section className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm">

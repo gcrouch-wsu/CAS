@@ -22,6 +22,13 @@ const patchSchema = z.object({
   visibleAnswerColumns: z.array(z.string()).optional(),
   visibleDocumentColumns: z.array(z.string()).optional(),
   termFieldSettings: z.array(termFieldSettingSchema).optional(),
+  publicHeaderTitle: z.string().max(200).optional(),
+  publicHeaderSubtitle: z.string().max(300).optional(),
+  publicHeaderLogoUrl: z.string().max(2000).optional(),
+  publicHeaderTitleHref: z.string().max(2000).optional(),
+  publicHeroEyebrow: z.string().max(200).optional(),
+  publicHeroBody: z.string().max(20000).optional(),
+  programDisplayNameStripSuffixes: z.array(z.string().max(200)).max(100).optional(),
 });
 
 export async function GET(
@@ -54,6 +61,13 @@ export async function GET(
     visibleAnswerColumns: row.visible_answer_columns,
     visibleDocumentColumns: row.visible_document_columns,
     termFieldSettings: row.term_field_settings,
+    publicHeaderTitle: row.public_header_title,
+    publicHeaderSubtitle: row.public_header_subtitle,
+    publicHeaderLogoUrl: row.public_header_logo_url,
+    publicHeaderTitleHref: row.public_header_title_href,
+    publicHeroEyebrow: row.public_hero_eyebrow,
+    publicHeroBody: row.public_hero_body,
+    programDisplayNameStripSuffixes: row.program_display_name_strip_suffixes,
     groupKeys: row.data.groups.map((g) => ({
       key: g.groupKey,
       label: g.displayName,
@@ -107,5 +121,12 @@ export async function PATCH(
     visibleAnswerColumns: updated.visible_answer_columns,
     visibleDocumentColumns: updated.visible_document_columns,
     termFieldSettings: updated.term_field_settings,
+    publicHeaderTitle: updated.public_header_title,
+    publicHeaderSubtitle: updated.public_header_subtitle,
+    publicHeaderLogoUrl: updated.public_header_logo_url,
+    publicHeaderTitleHref: updated.public_header_title_href,
+    publicHeroEyebrow: updated.public_hero_eyebrow,
+    publicHeroBody: updated.public_hero_body,
+    programDisplayNameStripSuffixes: updated.program_display_name_strip_suffixes,
   });
 }

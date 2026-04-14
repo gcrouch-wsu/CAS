@@ -51,6 +51,14 @@ export interface PublicPublicationPayload {
   defaultGroupKey: string;
   visibleColumnKeys: string[];
   showOrgContent: boolean;
+  /** Top bar on /s/[slug] only (not the main site header). */
+  publicHeaderTitle: string;
+  publicHeaderSubtitle: string;
+  publicHeaderLogoUrl: string | null;
+  publicHeaderTitleHref: string;
+  /** Intro card above search. */
+  heroEyebrow: string;
+  heroBody: string;
   /** When true, show CAS Program ID on application window cards (off by default). */
   showProgramIdOnPublic: boolean;
   termFieldSettings: TermFieldSetting[];

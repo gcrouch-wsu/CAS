@@ -5,6 +5,7 @@ import type {
   CasPublicationData,
   TermFieldSetting,
 } from "./types";
+import { DEFAULT_PROGRAM_NAME_STRIP_SUFFIXES } from "./program-display";
 import { REDUNDANT_DETAIL_COLUMN_KEYS } from "./types";
 
 function cellToString(v: unknown): string {
@@ -363,6 +364,7 @@ export function publicationUiDefaults(data: CasPublicationData) {
     visible_answer_columns: deriveDefaultVisibleDetailColumns(full.answerColumnOptions),
     visible_document_columns: deriveDefaultVisibleDetailColumns(full.documentColumnOptions),
     term_field_settings: deriveDefaultTermFieldSettings(full),
+    program_display_name_strip_suffixes: [...DEFAULT_PROGRAM_NAME_STRIP_SUFFIXES],
   };
 }
 

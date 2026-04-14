@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   CasOffering,
   PublicProgramGroup,
@@ -59,6 +60,46 @@ function pickGroup(
   return groups.find((g) => g.groupKey === key) ?? groups[0];
 }
 
+const URL_SPLIT_RE = /(https?:\/\/[^\s]+)/gi;
+
+function linkifySegment(segment: string): ReactNode[] {
+  const parts = segment.split(URL_SPLIT_RE);
+  return parts.map((part, i) => {
+    if (/^https?:\/\//i.test(part)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-wsu-crimson underline decoration-wsu-crimson/40 underline-offset-2 hover:decoration-wsu-crimson"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
+function HeroRichText({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/);
+  return (
+    <div className="space-y-3 text-sm leading-relaxed text-wsu-gray">
+      {blocks.map((block, bi) => (
+        <p key={bi} className="max-w-2xl">
+          {block.split("\n").map((line, li) => (
+            <Fragment key={li}>
+              {li > 0 ? <br /> : null}
+              {linkifySegment(line)}
+            </Fragment>
+          ))}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export default function PublicCasView({
   initial,
 }: {
@@ -102,16 +143,14 @@ export default function PublicCasView({
     <div className="mx-auto max-w-4xl px-4 py-10">
       <header className="mb-10 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-widest text-wsu-crimson">
-          Program view
+          {initial.heroEyebrow}
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-wsu-gray-dark">
           {initial.title}
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-wsu-gray">
-          Search or select a program to review requirements and materials. While you have text in
-          the search box, the list is ordered with stronger matches first and the top match is
-          selected automatically.
-        </p>
+        <div className="mt-3">
+          <HeroRichText text={initial.heroBody} />
+        </div>
       </header>
 
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end">

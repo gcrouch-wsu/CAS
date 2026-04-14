@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Source_Sans_3 } from "next/font/google";
-import { WsuHeader } from "@/components/WsuHeader";
 import "./globals.css";
 
 const sourceSans = Source_Sans_3({
@@ -22,8 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${sourceSans.variable} h-full antialiased`}>
       <body className={`${sourceSans.className} flex min-h-full flex-col`}>
-        <WsuHeader />
-        <div className="flex flex-1 flex-col">{children}</div>
+        {children}
       </body>
     </html>
   );

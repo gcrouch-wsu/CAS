@@ -7,6 +7,14 @@ import type {
 } from "./types";
 import { getBlobAccessMode } from "./blob-access";
 import {
+  DEFAULT_PUBLIC_HEADER_SUBTITLE,
+  DEFAULT_PUBLIC_HEADER_TITLE,
+  DEFAULT_PUBLIC_HEADER_TITLE_HREF,
+  DEFAULT_PUBLIC_HERO_BODY,
+  DEFAULT_PUBLIC_HERO_EYEBROW,
+} from "./public-page-defaults";
+import { cleanProgramDisplayName } from "./program-display";
+import {
   defaultVisibleColumns,
   ensurePublicationColumnMetadata,
   ensurePublicationOfferingShapes,
@@ -38,6 +46,16 @@ export type StoredPublicationBlob = {
   term_field_settings?: TermFieldSetting[];
   /** When true, show Program ID on public application window cards. */
   show_program_id_on_public?: boolean;
+  /** Public /s/[slug] top bar (crimson strip). */
+  public_header_title?: string;
+  public_header_subtitle?: string;
+  public_header_logo_url?: string;
+  public_header_title_href?: string;
+  /** Intro card (eyebrow + body). */
+  public_hero_eyebrow?: string;
+  public_hero_body?: string;
+  /** Suffixes removed from end of each program’s display name on the public page. */
+  program_display_name_strip_suffixes?: string[];
   data: CasPublicationData;
   created_at: string;
   updated_at: string;
@@ -55,12 +73,35 @@ export type PublicationRow = {
   visible_document_columns: string[];
   term_field_settings: TermFieldSetting[];
   show_program_id_on_public: boolean;
+  public_header_title: string;
+  public_header_subtitle: string;
+  public_header_logo_url: string;
+  public_header_title_href: string;
+  public_hero_eyebrow: string;
+  public_hero_body: string;
+  program_display_name_strip_suffixes: string[];
   data: CasPublicationData;
   created_at: string;
   updated_at: string;
 };
 
 type StoredGroup = CasPublicationData["groups"][number];
+
+export type PublicationPublicHeader = {
+  title: string;
+  subtitle: string;
+  logoUrl: string | null;
+  titleHref: string;
+};
+
+export function resolvePublicationPublicHeader(row: PublicationRow): PublicationPublicHeader {
+  return {
+    title: row.public_header_title.trim() || DEFAULT_PUBLIC_HEADER_TITLE,
+    subtitle: row.public_header_subtitle.trim() || DEFAULT_PUBLIC_HEADER_SUBTITLE,
+    logoUrl: row.public_header_logo_url.trim() ? row.public_header_logo_url.trim() : null,
+    titleHref: row.public_header_title_href.trim() || DEFAULT_PUBLIC_HEADER_TITLE_HREF,
+  };
+}
 
 function requireBlobToken(): string {
   const t = process.env.BLOB_READ_WRITE_TOKEN?.trim();
@@ -99,6 +140,11 @@ function blobToRow(parsed: StoredPublicationBlob): PublicationRow {
     parsed.term_field_settings,
     ui.term_field_settings
   );
+  const program_display_name_strip_suffixes =
+    parsed.program_display_name_strip_suffixes !== undefined &&
+    Array.isArray(parsed.program_display_name_strip_suffixes)
+      ? [...parsed.program_display_name_strip_suffixes]
+      : [...ui.program_display_name_strip_suffixes];
   return {
     id: parsed.slug,
     slug: parsed.slug,
@@ -111,6 +157,18 @@ function blobToRow(parsed: StoredPublicationBlob): PublicationRow {
     visible_document_columns,
     term_field_settings,
     show_program_id_on_public: parsed.show_program_id_on_public === true,
+    public_header_title:
+      typeof parsed.public_header_title === "string" ? parsed.public_header_title : "",
+    public_header_subtitle:
+      typeof parsed.public_header_subtitle === "string" ? parsed.public_header_subtitle : "",
+    public_header_logo_url:
+      typeof parsed.public_header_logo_url === "string" ? parsed.public_header_logo_url : "",
+    public_header_title_href:
+      typeof parsed.public_header_title_href === "string" ? parsed.public_header_title_href : "",
+    public_hero_eyebrow:
+      typeof parsed.public_hero_eyebrow === "string" ? parsed.public_hero_eyebrow : "",
+    public_hero_body: typeof parsed.public_hero_body === "string" ? parsed.public_hero_body : "",
+    program_display_name_strip_suffixes,
     data,
     created_at: parsed.created_at,
     updated_at: parsed.updated_at,
@@ -133,11 +191,12 @@ function mapToPublicGroup(
   visibleColumnKeys: string[],
   questionKeys: string[],
   answerKeys: string[],
-  documentKeys: string[]
+  documentKeys: string[],
+  programStripSuffixes: string[]
 ): PublicProgramGroup {
   return {
     groupKey: g.groupKey,
-    displayName: g.displayName,
+    displayName: cleanProgramDisplayName(g.displayName, programStripSuffixes),
     visibleShared: pickVisibleShared(g.shared, visibleColumnKeys),
     offerings: g.offerings,
     recommendations: g.recommendations,
@@ -155,12 +214,20 @@ export function toPublicPayload(row: PublicationRow): PublicPublicationPayload {
   const qk = row.visible_question_columns;
   const ak = row.visible_answer_columns;
   const dk = row.visible_document_columns;
+  const strip = row.program_display_name_strip_suffixes;
+  const header = resolvePublicationPublicHeader(row);
   return {
     title: row.title,
     slug: row.slug,
     defaultGroupKey: row.default_group_key || data.groups[0]?.groupKey || "",
     visibleColumnKeys: keys,
     showOrgContent: showOrg,
+    publicHeaderTitle: header.title,
+    publicHeaderSubtitle: header.subtitle,
+    publicHeaderLogoUrl: header.logoUrl,
+    publicHeaderTitleHref: header.titleHref,
+    heroEyebrow: row.public_hero_eyebrow.trim() || DEFAULT_PUBLIC_HERO_EYEBROW,
+    heroBody: row.public_hero_body.trim() || DEFAULT_PUBLIC_HERO_BODY,
     termFieldSettings: row.term_field_settings,
     showProgramIdOnPublic: row.show_program_id_on_public,
     visibleQuestionColumnKeys: qk,
@@ -168,7 +235,7 @@ export function toPublicPayload(row: PublicationRow): PublicPublicationPayload {
     visibleDocumentColumnKeys: dk,
     orgQuestions: showOrg ? data.orgQuestions : [],
     orgAnswers: showOrg ? data.orgAnswers : [],
-    groups: data.groups.map((g) => mapToPublicGroup(g, keys, qk, ak, dk)),
+    groups: data.groups.map((g) => mapToPublicGroup(g, keys, qk, ak, dk, strip)),
   };
 }
 
@@ -226,6 +293,13 @@ export async function createPublication(input: {
     visible_document_columns: ui.visible_document_columns,
     term_field_settings: ui.term_field_settings,
     show_program_id_on_public: false,
+    public_header_title: "",
+    public_header_subtitle: "",
+    public_header_logo_url: "",
+    public_header_title_href: "",
+    public_hero_eyebrow: "",
+    public_hero_body: "",
+    program_display_name_strip_suffixes: ui.program_display_name_strip_suffixes,
     data,
     created_at: now,
     updated_at: now,
@@ -250,6 +324,13 @@ export async function updatePublication(
     visibleAnswerColumns?: string[];
     visibleDocumentColumns?: string[];
     termFieldSettings?: TermFieldSetting[];
+    publicHeaderTitle?: string;
+    publicHeaderSubtitle?: string;
+    publicHeaderLogoUrl?: string;
+    publicHeaderTitleHref?: string;
+    publicHeroEyebrow?: string;
+    publicHeroBody?: string;
+    programDisplayNameStripSuffixes?: string[];
   }
 ): Promise<PublicationRow | null> {
   const existing = await getPublicationBySlug(slug);
@@ -319,6 +400,38 @@ export async function updatePublication(
     term_field_settings = mergeTermFieldSettings(sanitized, defaults);
   }
 
+  let public_header_title = existing.public_header_title;
+  if (patch.publicHeaderTitle !== undefined) {
+    public_header_title = patch.publicHeaderTitle.slice(0, 200);
+  }
+  let public_header_subtitle = existing.public_header_subtitle;
+  if (patch.publicHeaderSubtitle !== undefined) {
+    public_header_subtitle = patch.publicHeaderSubtitle.slice(0, 300);
+  }
+  let public_header_logo_url = existing.public_header_logo_url;
+  if (patch.publicHeaderLogoUrl !== undefined) {
+    public_header_logo_url = patch.publicHeaderLogoUrl.slice(0, 2000);
+  }
+  let public_header_title_href = existing.public_header_title_href;
+  if (patch.publicHeaderTitleHref !== undefined) {
+    public_header_title_href = patch.publicHeaderTitleHref.slice(0, 2000);
+  }
+  let public_hero_eyebrow = existing.public_hero_eyebrow;
+  if (patch.publicHeroEyebrow !== undefined) {
+    public_hero_eyebrow = patch.publicHeroEyebrow.slice(0, 200);
+  }
+  let public_hero_body = existing.public_hero_body;
+  if (patch.publicHeroBody !== undefined) {
+    public_hero_body = patch.publicHeroBody.slice(0, 20000);
+  }
+  let program_display_name_strip_suffixes = existing.program_display_name_strip_suffixes;
+  if (patch.programDisplayNameStripSuffixes !== undefined) {
+    program_display_name_strip_suffixes = patch.programDisplayNameStripSuffixes
+      .map((s) => String(s).trim().slice(0, 200))
+      .filter(Boolean)
+      .slice(0, 100);
+  }
+
   const now = new Date().toISOString();
   const body: StoredPublicationBlob = {
     version: 1,
@@ -328,6 +441,13 @@ export async function updatePublication(
     default_group_key: defaultGroupKey,
     show_org_on_public: showOrgOnPublic,
     show_program_id_on_public,
+    public_header_title,
+    public_header_subtitle,
+    public_header_logo_url,
+    public_header_title_href,
+    public_hero_eyebrow,
+    public_hero_body,
+    program_display_name_strip_suffixes,
     visible_question_columns,
     visible_answer_columns,
     visible_document_columns,
@@ -403,6 +523,13 @@ export async function mergePublicationFromUpload(
     visible_answer_columns,
     visible_document_columns,
     term_field_settings,
+    public_header_title: existing.public_header_title,
+    public_header_subtitle: existing.public_header_subtitle,
+    public_header_logo_url: existing.public_header_logo_url,
+    public_header_title_href: existing.public_header_title_href,
+    public_hero_eyebrow: existing.public_hero_eyebrow,
+    public_hero_body: existing.public_hero_body,
+    program_display_name_strip_suffixes: existing.program_display_name_strip_suffixes,
     data: merged,
     created_at: existing.created_at,
     updated_at: now,
