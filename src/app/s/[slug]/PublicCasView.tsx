@@ -1,12 +1,12 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import {
   applicationWindowCardTitle,
   augmentDetailRowsWithApplicationWindow,
   prependApplicationWindowColumn,
 } from "@/lib/application-window-label";
+import { linkifyHeroSegment } from "@/lib/hero-linkify";
 import {
   filterKeysByVisibleData,
   getRecordValueCi,
@@ -70,40 +70,6 @@ function pickGroup(
   return groups.find((g) => g.groupKey === key) ?? groups[0];
 }
 
-/** `https://`, `http://`, and `mailto:` (until whitespace). */
-const LINK_SPLIT_RE = /(https?:\/\/[^\s]+|mailto:[^\s]+)/gi;
-
-function linkifySegment(segment: string): ReactNode[] {
-  const parts = segment.split(LINK_SPLIT_RE);
-  return parts.map((part, i) => {
-    if (/^https?:\/\//i.test(part)) {
-      return (
-        <a
-          key={i}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium text-wsu-crimson underline decoration-wsu-crimson/40 underline-offset-2 hover:decoration-wsu-crimson"
-        >
-          {part}
-        </a>
-      );
-    }
-    if (/^mailto:/i.test(part)) {
-      return (
-        <a
-          key={i}
-          href={part}
-          className="font-medium text-wsu-crimson underline decoration-wsu-crimson/40 underline-offset-2 hover:decoration-wsu-crimson"
-        >
-          {part}
-        </a>
-      );
-    }
-    return part;
-  });
-}
-
 function HeroRichText({ text }: { text: string }) {
   const blocks = text.split(/\n{2,}/);
   return (
@@ -113,7 +79,7 @@ function HeroRichText({ text }: { text: string }) {
           {block.split("\n").map((line, li) => (
             <Fragment key={li}>
               {li > 0 ? <br /> : null}
-              {linkifySegment(line)}
+              {linkifyHeroSegment(line)}
             </Fragment>
           ))}
         </p>

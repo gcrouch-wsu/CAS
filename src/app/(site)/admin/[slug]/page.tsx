@@ -697,9 +697,12 @@ export default function AdminPublicationPage() {
               <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
                 Intro card body (instructions; use a blank line between paragraphs;{" "}
                 <code className="font-mono text-xs">https://</code>,{" "}
-                <code className="font-mono text-xs">http://</code>, and{" "}
-                <code className="font-mono text-xs">mailto:</code> links become clickable on the
-                public page)
+                <code className="font-mono text-xs">http://</code>,{" "}
+                <code className="font-mono text-xs">mailto:…</code>, and plain{" "}
+                <code className="font-mono text-xs">name@school.edu</code> addresses become mail links
+                on the public page — use either{" "}
+                <code className="font-mono text-xs">mailto:cas.support@wsu.edu</code> or just the
+                address, not both in a row)
                 <textarea
                   value={draftPublicHeroBody}
                   disabled={saving}
