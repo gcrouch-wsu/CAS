@@ -1,5 +1,6 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TermFieldSetting } from "@/lib/types";
@@ -77,14 +78,23 @@ export default function AdminPublicationPage() {
       router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
       return;
     }
-    const body = await res.json();
-    if (!res.ok) {
-      setError((body as { error?: string }).error ?? "Failed to load");
+    const raw = await res.text();
+    let body: Record<string, unknown> = {};
+    try {
+      if (raw.trim()) body = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      setError(`Failed to load settings (HTTP ${res.status}). ${raw.slice(0, 300)}`);
       setSaved(null);
       setLoading(false);
       return;
     }
-    applyConfig(body as ConfigResponse);
+    if (!res.ok) {
+      setError(typeof body.error === "string" ? body.error : "Failed to load");
+      setSaved(null);
+      setLoading(false);
+      return;
+    }
+    applyConfig(body as unknown as ConfigResponse);
     setLoading(false);
   }, [slug, router, applyConfig]);
 
@@ -144,7 +154,14 @@ export default function AdminPublicationPage() {
         router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
         return;
       }
-      const body = (await res.json()) as Partial<ConfigResponse> & { error?: string };
+      const rawSave = await res.text();
+      let body: Partial<ConfigResponse> & { error?: string } = {};
+      try {
+        if (rawSave.trim()) body = JSON.parse(rawSave) as typeof body;
+      } catch {
+        setError(`Save failed (HTTP ${res.status}). ${rawSave.slice(0, 300)}`);
+        return;
+      }
       if (!res.ok) {
         setError(body.error ?? "Save failed");
         return;
@@ -178,14 +195,42 @@ export default function AdminPublicationPage() {
     setMergeMessage(null);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.set("file", mergeFile);
+      const pathname = `cas-merge-staging/${slug}/${crypto.randomUUID()}.xlsx`;
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      let blobResult;
+      try {
+        blobResult = await upload(pathname, mergeFile, {
+          access: "private",
+          handleUploadUrl: `${origin}/api/admin/merge-workbook-token`,
+          clientPayload: JSON.stringify({ slug }),
+          multipart: mergeFile.size > 4 * 1024 * 1024,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Direct upload failed";
+        setError(
+          `${msg} Large workbooks are sent straight to Blob storage (not through the small server upload limit). Try again, or sign out and back in.`
+        );
+        return;
+      }
+
       const res = await fetch(`/api/admin/publications/${slug}/merge`, {
         method: "POST",
         credentials: "include",
-        body: fd,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pathname: blobResult.pathname,
+          sourceFileName: mergeFile.name,
+        }),
       });
-      const body = (await res.json()) as { error?: string; sourceFileName?: string };
+      const rawMerge = await res.text();
+      let body: { error?: string; sourceFileName?: string } = {};
+      try {
+        if (rawMerge.trim()) body = JSON.parse(rawMerge) as typeof body;
+      } catch {
+        setError(`Merge failed (HTTP ${res.status}). ${rawMerge.slice(0, 400)}`);
+        return;
+      }
       if (res.status === 401) {
         router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
         return;
@@ -201,8 +246,8 @@ export default function AdminPublicationPage() {
           : "Merged successfully."
       );
       await loadConfig();
-    } catch {
-      setError("Network error during merge");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unexpected error during merge");
     } finally {
       setMergeBusy(false);
     }
@@ -318,12 +363,14 @@ export default function AdminPublicationPage() {
             </h2>
             <p className="mt-2 text-sm text-wsu-gray-dark">{saved.sourceFileName}</p>
             <p className="mt-3 text-sm text-wsu-gray">
-              Add another CAS workbook (for example GradCAS after EngineeringCAS). Programs with
-              the same CAS grouping key are merged; others are appended.
+              Add another CAS export (for example GradCAS after EngineeringCAS). The app reads your
+              second file and combines it with what is already published — you keep separate
+              workbooks; nothing is pre-merged in Excel. Large files upload straight to Blob storage
+              so they are not limited by the small server request cap on Vercel.
             </p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
               <label className="block flex-1 text-sm font-medium text-wsu-gray-dark">
-                Merge workbook
+                Second workbook (.xlsx)
                 <input
                   type="file"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -338,7 +385,7 @@ export default function AdminPublicationPage() {
                 onClick={() => void mergeUpload()}
                 className="rounded-lg bg-wsu-gray-dark px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-wsu-gray disabled:opacity-50"
               >
-                {mergeBusy ? "Merging…" : "Merge upload"}
+                {mergeBusy ? "Uploading and merging…" : "Add workbook to publication"}
               </button>
             </div>
             {mergeMessage && (

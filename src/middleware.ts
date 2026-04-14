@@ -9,10 +9,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  /** Blob client-upload callbacks (no session cookie); auth runs inside the route for token generation. */
+  const isBlobMergeTokenRoute = pathname === "/api/admin/merge-workbook-token";
+
   const needsAuth =
-    pathname === "/admin" ||
-    pathname.startsWith("/admin/") ||
-    pathname.startsWith("/api/admin/");
+    !isBlobMergeTokenRoute &&
+    (pathname === "/admin" ||
+      pathname.startsWith("/admin/") ||
+      pathname.startsWith("/api/admin/"));
 
   if (!needsAuth) {
     return NextResponse.next();
