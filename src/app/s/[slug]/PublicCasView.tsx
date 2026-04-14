@@ -126,6 +126,14 @@ export default function PublicCasView({
     [initial.groups, selectedKey]
   );
 
+  const stepProgram = (delta: number) => {
+    if (filtered.length === 0) return;
+    const idx = filtered.findIndex((g) => g.groupKey === selectedKey);
+    const base = idx < 0 ? 0 : idx;
+    const next = (base + delta + filtered.length) % filtered.length;
+    setSelectedKey(filtered[next].groupKey);
+  };
+
   const showOrg =
     initial.showOrgContent &&
     (initial.orgQuestions.length > 0 || initial.orgAnswers.length > 0);
@@ -157,17 +165,37 @@ export default function PublicCasView({
         </label>
         <label className="min-w-[min(100%,280px)] flex-1 text-sm font-medium text-wsu-gray-dark">
           Program
-          <select
-            value={selectedKey}
-            onChange={(e) => setSelectedKey(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base text-wsu-gray-dark shadow-sm focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
-          >
-            {filtered.map((g) => (
-              <option key={g.groupKey} value={g.groupKey}>
-                {g.displayName}
-              </option>
-            ))}
-          </select>
+          <div className="mt-1.5 flex gap-2">
+            <select
+              value={selectedKey}
+              onChange={(e) => setSelectedKey(e.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base text-wsu-gray-dark shadow-sm focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
+            >
+              {filtered.map((g) => (
+                <option key={g.groupKey} value={g.groupKey}>
+                  {g.displayName}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              aria-label="Previous program"
+              disabled={filtered.length <= 1}
+              onClick={() => stepProgram(-1)}
+              className="shrink-0 rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base font-semibold leading-none text-wsu-gray-dark shadow-sm hover:bg-wsu-cream/50 disabled:pointer-events-none disabled:opacity-40 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Next program"
+              disabled={filtered.length <= 1}
+              onClick={() => stepProgram(1)}
+              className="shrink-0 rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base font-semibold leading-none text-wsu-gray-dark shadow-sm hover:bg-wsu-cream/50 disabled:pointer-events-none disabled:opacity-40 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
+            >
+              ›
+            </button>
+          </div>
         </label>
       </div>
 
