@@ -3,25 +3,24 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const STORAGE_KEY = "cas_admin_secret";
-
 export default function AdminHomePage() {
   const router = useRouter();
-  const [secret, setSecret] = useState("");
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    router.push("/admin/login");
+    router.refresh();
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!file) {
       setError("Choose an Excel file.");
-      return;
-    }
-    if (!secret.trim()) {
-      setError("Enter the admin secret.");
       return;
     }
     setLoading(true);
@@ -31,16 +30,17 @@ export default function AdminHomePage() {
       if (title.trim()) fd.set("title", title.trim());
       const res = await fetch("/api/admin/publications", {
         method: "POST",
-        headers: { Authorization: `Bearer ${secret.trim()}` },
+        credentials: "include",
         body: fd,
       });
-      const body = (await res.json()) as { error?: string; slug?: string; adminUrl?: string };
+      const body = (await res.json()) as { error?: string; slug?: string };
+      if (res.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
       if (!res.ok) {
         setError(body.error ?? "Upload failed");
         return;
-      }
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem(STORAGE_KEY, secret.trim());
       }
       if (body.slug) {
         router.push(`/admin/${body.slug}`);
@@ -54,22 +54,21 @@ export default function AdminHomePage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-10">
+      <div className="mb-6 flex justify-end">
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="text-sm text-zinc-600 underline hover:text-zinc-900"
+        >
+          Sign out
+        </button>
+      </div>
       <h1 className="text-2xl font-semibold text-zinc-900">Publish CAS export</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Upload a CAS workbook (.xlsx). You will set which summary columns are public on
         the next screen.
       </p>
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
-        <label className="block text-sm font-medium text-zinc-700">
-          Admin secret
-          <input
-            type="password"
-            autoComplete="off"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 shadow-sm"
-          />
-        </label>
         <label className="block text-sm font-medium text-zinc-700">
           Title (optional)
           <input

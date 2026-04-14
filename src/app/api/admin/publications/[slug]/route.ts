@@ -1,24 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPublicationBySlug, updatePublication } from "@/lib/cas-store";
+import { unauthorizedIfNotAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
-
-function assertAdmin(request: Request): NextResponse | null {
-  const secret = process.env.ADMIN_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.json(
-      { error: "Server is not configured with ADMIN_SECRET." },
-      { status: 500 }
-    );
-  }
-  const h = request.headers.get("authorization");
-  const token = h?.startsWith("Bearer ") ? h.slice(7).trim() : "";
-  if (token !== secret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  return null;
-}
 
 const patchSchema = z.object({
   title: z.string().min(0).max(500).optional(),
@@ -27,10 +12,10 @@ const patchSchema = z.object({
 });
 
 export async function GET(
-  request: Request,
+  _request: Request,
   ctx: { params: Promise<{ slug: string }> }
 ) {
-  const deny = assertAdmin(request);
+  const deny = await unauthorizedIfNotAdmin();
   if (deny) return deny;
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
     return NextResponse.json(
@@ -59,7 +44,7 @@ export async function PATCH(
   request: Request,
   ctx: { params: Promise<{ slug: string }> }
 ) {
-  const deny = assertAdmin(request);
+  const deny = await unauthorizedIfNotAdmin();
   if (deny) return deny;
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
     return NextResponse.json(

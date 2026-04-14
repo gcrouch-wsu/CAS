@@ -6,7 +6,7 @@ export default function Home() {
       <h1 className="text-3xl font-semibold tracking-tight">CAS program viewer</h1>
       <p className="mt-4 text-zinc-600">
         Publish a CAS Excel export to a read-only page with search and program selection.
-        Admin upload is protected by a server secret; public pages need only the link.
+        Admin uses a username and password; public pages need only the link.
       </p>
       <nav className="mt-10 flex flex-col gap-3 text-sm font-medium">
         <Link

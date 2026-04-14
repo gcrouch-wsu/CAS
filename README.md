@@ -6,30 +6,39 @@ Remote repo: [github.com/gcrouch-wsu/CAS](https://github.com/gcrouch-wsu/CAS).
 
 > Local folder name is `cas` (npm naming). Your GitHub repo can stay `CAS`.
 
-## What you need from Vercel
+## Environment variables (Vercel)
 
-| Variable | How you get it |
-|----------|----------------|
-| **`BLOB_READ_WRITE_TOKEN`** | Create a **Blob** store and **link it to this project**. Vercel injects this variable automatically (check **Project → Settings → Environment Variables**). |
-| **`ADMIN_SECRET`** | You create it: a long random string. Add it manually under **Environment Variables** for Production (and Preview if you want). |
+| Variable | Purpose |
+|----------|---------|
+| **`BLOB_READ_WRITE_TOKEN`** | Added automatically when you **link a Blob store** to the project (**Storage** in the Vercel dashboard). |
+| **`ADMIN_USERNAME`** | Admin login name (you choose). |
+| **`ADMIN_PASSWORD`** | Admin login password (choose a strong one). |
+| **`AUTH_SECRET`** | At least **16 characters**, random. Used only to **sign the session cookie** (not the same as the password). |
+| **`CAS_BLOB_ACCESS`** (optional) | `private` (default) or `public`. Must match how blobs are stored — see **Blob public vs private** below. |
 
-You do **not** need `DATABASE_URL` or Supabase for this app.
+You do **not** need `DATABASE_URL` or Supabase.
+
+### First deploy on Vercel (simple order)
+
+1. **Import** the GitHub repo as a new Vercel project.
+2. **Storage → Blob** → create a store and **connect it to this project** (confirms `BLOB_READ_WRITE_TOKEN`).
+3. **Settings → Environment Variables** → add **`ADMIN_USERNAME`**, **`ADMIN_PASSWORD`**, and **`AUTH_SECRET`** manually for **Production** (and Preview if you use it).
+4. **Redeploy** the latest deployment.
+
+Admin UI: **`/admin/login`** → after sign-in, **`/admin`** to upload.
 
 ---
 
-## Recommended order (first time on Vercel)
+## Blob public vs private
 
-1. **Push this repo to GitHub** (if it is not already).
-2. In **[vercel.com](https://vercel.com)** → **Add New… → Project** → **Import** the `CAS` repo.
-3. **Before or after the first deploy**, open the **project** (not the team root):
-   - Go to **Storage** (or **Create** → **Blob**).
-   - **Create** a Blob store (any name, e.g. `cas-blob`) and **connect** it to **this** project.
-4. Confirm **Settings → Environment Variables** includes **`BLOB_READ_WRITE_TOKEN`** for **Production**.
-5. Add **`ADMIN_SECRET`** yourself (same Environment Variables screen). Save.
-6. **Deployments → … on the latest deployment → Redeploy** so a build runs with both variables set.
+Each uploaded file uses an **access mode** in code (`private` by default). That must match what Vercel expects when reading.
 
-**Answer to “Blob or project first?”**  
-Either works, but the path that causes the least confusion is: **import the GitHub project first** → then **attach Blob to that project** so the token appears on the right app → then add **`ADMIN_SECRET`** → redeploy.
+- **Recommended:** keep **`CAS_BLOB_ACCESS` unset** (defaults to **`private`**) and use a normal Blob store. New uploads use private blobs; only your server (with the token) reads them.
+- If you switched the store to **public** or older objects were uploaded as **public**, **`get` with `private`** can fail. Then either:
+  - Set **`CAS_BLOB_ACCESS=public`** in Vercel so reads/writes match your store, **or**
+  - Leave the app on **`private`**, create a **new** Blob store (or re-link) so defaults are private, **re-upload** publications.
+
+There is often **no single dashboard toggle** that flips existing blobs to private; matching **`CAS_BLOB_ACCESS`** to reality or re-uploading fixes errors.
 
 ---
 
@@ -37,41 +46,27 @@ Either works, but the path that causes the least confusion is: **import the GitH
 
 ```bash
 npm install
+npx vercel link
+npx vercel env pull .env.local
 ```
 
-1. Link and pull env from Vercel (easiest):
+Or copy **`.env.example`** to `.env.local` and fill in values. Then:
 
-   ```bash
-   npx vercel link
-   npx vercel env pull .env.local
-   ```
+```bash
+npm run dev
+```
 
-2. Or create `.env.local` by hand:
-
-   ```env
-   BLOB_READ_WRITE_TOKEN=...   # from Vercel project settings
-   ADMIN_SECRET=...            # same value you use in production
-   ```
-
-3. Run:
-
-   ```bash
-   npm run dev
-   ```
-
-- Home: [http://localhost:3000](http://localhost:3000)
-- Admin: [http://localhost:3000/admin](http://localhost:3000/admin)
-- Public: `/s/<slug>` after an upload
+- Sign in: [http://localhost:3000/admin/login](http://localhost:3000/admin/login)
+- Upload: [http://localhost:3000/admin](http://localhost:3000/admin)
+- Public view: `/s/<slug>`
 
 ---
 
 ## How it works
 
-1. Admin uploads a CAS `.xlsx` with `Authorization: Bearer <ADMIN_SECRET>`.
-2. The server parses sheets and writes **one private JSON object** per publication to Blob at  
-   `cas-publications/<slug>.json`.
-3. The public page and `GET /api/public/[slug]` read that object using **`BLOB_READ_WRITE_TOKEN`** on the server only.
-4. Admin can **PATCH** column visibility and default program; the JSON file is overwritten.
+1. Admin signs in at **`/admin/login`**; the server sets an **HTTP-only cookie** (signed with **`AUTH_SECRET`**).
+2. Admin uploads a CAS `.xlsx` on **`/admin`**; the server writes **`cas-publications/<slug>.json`** to Blob.
+3. **`/s/[slug]`** and **`GET /api/public/[slug]`** read that JSON with **`BLOB_READ_WRITE_TOKEN`** on the server only.
 
 `robots` on `/s/[slug]` is **noindex** by default.
 
@@ -79,11 +74,10 @@ npm install
 
 ## Security
 
-- **`ADMIN_SECRET`** protects uploads and admin settings.
-- **`BLOB_READ_WRITE_TOKEN`** must stay server-side (never commit to git). Public users never see it.
-- Publication URLs are unlisted slugs; treat links as capability URLs.
+- **`ADMIN_PASSWORD`** and **`AUTH_SECRET`** are sensitive; keep them in Vercel env only.
+- **`BLOB_READ_WRITE_TOKEN`** must never be exposed to browsers.
+- Treat public program URLs as **unlisted links**.
 
 ## CAS parser
 
-Uses the [`xlsx`](https://www.npmjs.com/package/xlsx) package. Only **trusted** CAS files should be uploaded (admin-only).
-
+Uses [`xlsx`](https://www.npmjs.com/package/xlsx). Only **trusted** CAS files should be uploaded.

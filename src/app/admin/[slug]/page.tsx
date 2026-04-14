@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "cas_admin_secret";
-
 type ConfigResponse = {
   slug: string;
   title: string;
@@ -20,67 +18,61 @@ export default function AdminPublicationPage() {
   const params = useParams();
   const router = useRouter();
   const slug = typeof params.slug === "string" ? params.slug : "";
-  const [secret, setSecret] = useState("");
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const loadWithToken = useCallback(
-    async (token: string) => {
-      if (!slug || !token.trim()) return;
-      setError(null);
-      const res = await fetch(`/api/admin/publications/${slug}`, {
-        headers: { Authorization: `Bearer ${token.trim()}` },
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError((body as { error?: string }).error ?? "Failed to load");
-        setConfig(null);
-        return;
-      }
-      setConfig(body as ConfigResponse);
-      setSecret(token.trim());
-      sessionStorage.setItem(STORAGE_KEY, token.trim());
-    },
-    [slug]
-  );
+  const loadConfig = useCallback(async () => {
+    if (!slug) return;
+    setError(null);
+    const res = await fetch(`/api/admin/publications/${slug}`, { credentials: "include" });
+    if (res.status === 401) {
+      router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
+      return;
+    }
+    const body = await res.json();
+    if (!res.ok) {
+      setError((body as { error?: string }).error ?? "Failed to load");
+      setConfig(null);
+      return;
+    }
+    setConfig(body as ConfigResponse);
+  }, [slug, router]);
 
   useEffect(() => {
-    if (!slug) return;
-    const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      setSecret(stored);
-      void loadWithToken(stored);
-    }
-  }, [slug, loadWithToken]);
+    void loadConfig();
+  }, [loadConfig]);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    router.push("/admin/login");
+    router.refresh();
+  }
 
   async function save(patch: {
     visibleColumnKeys?: string[];
     defaultGroupKey?: string;
     title?: string;
   }) {
-    const s = secret.trim() || sessionStorage.getItem(STORAGE_KEY) || "";
-    if (!s) {
-      setError("Enter admin secret");
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
       const res = await fetch(`/api/admin/publications/${slug}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${s}`,
-          "Content-Type": "application/json",
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
+      if (res.status === 401) {
+        router.push(`/admin/login?next=${encodeURIComponent(`/admin/${slug}`)}`);
+        return;
+      }
       const body = await res.json();
       if (!res.ok) {
         setError((body as { error?: string }).error ?? "Save failed");
         return;
       }
-      await loadWithToken(s);
+      await loadConfig();
     } catch {
       setError("Network error");
     } finally {
@@ -114,29 +106,18 @@ export default function AdminPublicationPage() {
         <Link href={`/s/${slug}`} className="text-sm font-medium text-emerald-700 underline">
           Open public page
         </Link>
+        <span className="text-zinc-300">|</span>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="text-sm text-zinc-600 underline hover:text-zinc-900"
+        >
+          Sign out
+        </button>
       </div>
 
       <h1 className="text-2xl font-semibold text-zinc-900">Publication settings</h1>
       <p className="mt-1 font-mono text-xs text-zinc-500">slug: {slug}</p>
-
-      <div className="mt-6 flex flex-wrap items-end gap-3">
-        <label className="text-sm font-medium text-zinc-700">
-          Admin secret
-          <input
-            type="password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            className="mt-1 block rounded-md border border-zinc-300 px-3 py-2 shadow-sm"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void loadWithToken(secret.trim() || sessionStorage.getItem(STORAGE_KEY) || "")}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-        >
-          Load
-        </button>
-      </div>
 
       {error && (
         <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">

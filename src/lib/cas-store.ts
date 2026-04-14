@@ -4,6 +4,7 @@ import type {
   PublicPublicationPayload,
   PublicProgramGroup,
 } from "./types";
+import { getBlobAccessMode } from "./blob-access";
 import { defaultVisibleColumns, pickVisibleShared } from "./parse-cas";
 
 const BLOB_PREFIX = "cas-publications";
@@ -103,9 +104,10 @@ export async function getPublicationBySlug(
     return null;
   }
   const pathname = publicationPathname(slug);
+  const access = getBlobAccessMode();
   try {
     const res = await get(pathname, {
-      access: "private",
+      access,
       token,
       useCache: false,
     });
@@ -143,7 +145,7 @@ export async function createPublication(input: {
     updated_at: now,
   };
   await put(publicationPathname(input.slug), JSON.stringify(body), {
-    access: "private",
+    access: getBlobAccessMode(),
     token,
     addRandomSuffix: false,
     contentType: "application/json",
@@ -189,7 +191,7 @@ export async function updatePublication(
     updated_at: new Date().toISOString(),
   };
   await put(publicationPathname(slug), JSON.stringify(body), {
-    access: "private",
+    access: getBlobAccessMode(),
     token,
     addRandomSuffix: false,
     contentType: "application/json",

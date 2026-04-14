@@ -2,29 +2,14 @@ import { customAlphabet } from "nanoid";
 import { NextResponse } from "next/server";
 import { createPublication } from "@/lib/cas-store";
 import { parseCasWorkbook } from "@/lib/parse-cas";
+import { unauthorizedIfNotAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
 
 const mkSlug = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 
-function assertAdmin(request: Request): NextResponse | null {
-  const secret = process.env.ADMIN_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.json(
-      { error: "Server is not configured with ADMIN_SECRET." },
-      { status: 500 }
-    );
-  }
-  const h = request.headers.get("authorization");
-  const token = h?.startsWith("Bearer ") ? h.slice(7).trim() : "";
-  if (token !== secret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  return null;
-}
-
 export async function POST(request: Request) {
-  const deny = assertAdmin(request);
+  const deny = await unauthorizedIfNotAdmin();
   if (deny) return deny;
 
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
