@@ -3,6 +3,7 @@
 import { upload } from "@vercel/blob/client";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PROGRAM_NAME_STRIP_COMMA_AND_REST } from "@/lib/program-display";
 import type { TermFieldSetting } from "@/lib/types";
 
 type ConfigResponse = {
@@ -559,7 +560,10 @@ export default function AdminPublicationPage() {
               </label>
               <label className="block text-sm font-medium text-wsu-gray-dark sm:col-span-2">
                 Intro card body (instructions; use a blank line between paragraphs;{" "}
-                <code className="font-mono text-xs">https://</code> links become clickable)
+                <code className="font-mono text-xs">https://</code>,{" "}
+                <code className="font-mono text-xs">http://</code>, and{" "}
+                <code className="font-mono text-xs">mailto:</code> links become clickable on the
+                public page)
                 <textarea
                   value={draftPublicHeroBody}
                   disabled={saving}
@@ -572,7 +576,11 @@ export default function AdminPublicationPage() {
                 Program names on the public page: strip these suffixes from the end (one per line).
                 Longer lines are tried first each pass (e.g.{" "}
                 <code className="font-mono text-xs">, Online (Spring)</code> before{" "}
-                <code className="font-mono text-xs">, Online</code>).
+                <code className="font-mono text-xs">, Online</code>). Use{" "}
+                <code className="font-mono text-xs">{PROGRAM_NAME_STRIP_COMMA_AND_REST}</code> as
+                its own line to drop the <strong className="text-wsu-gray-dark">first comma and
+                everything after it</strong> (covers any trailing campus/modality text after that
+                comma).
                 <textarea
                   value={draftProgramStripText}
                   disabled={saving}

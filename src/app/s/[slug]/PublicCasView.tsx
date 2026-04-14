@@ -60,10 +60,11 @@ function pickGroup(
   return groups.find((g) => g.groupKey === key) ?? groups[0];
 }
 
-const URL_SPLIT_RE = /(https?:\/\/[^\s]+)/gi;
+/** `https://`, `http://`, and `mailto:` (until whitespace). */
+const LINK_SPLIT_RE = /(https?:\/\/[^\s]+|mailto:[^\s]+)/gi;
 
 function linkifySegment(segment: string): ReactNode[] {
-  const parts = segment.split(URL_SPLIT_RE);
+  const parts = segment.split(LINK_SPLIT_RE);
   return parts.map((part, i) => {
     if (/^https?:\/\//i.test(part)) {
       return (
@@ -72,6 +73,17 @@ function linkifySegment(segment: string): ReactNode[] {
           href={part}
           target="_blank"
           rel="noopener noreferrer"
+          className="font-medium text-wsu-crimson underline decoration-wsu-crimson/40 underline-offset-2 hover:decoration-wsu-crimson"
+        >
+          {part}
+        </a>
+      );
+    }
+    if (/^mailto:/i.test(part)) {
+      return (
+        <a
+          key={i}
+          href={part}
           className="font-medium text-wsu-crimson underline decoration-wsu-crimson/40 underline-offset-2 hover:decoration-wsu-crimson"
         >
           {part}
