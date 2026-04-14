@@ -829,10 +829,15 @@ export default function AdminPublicationPage() {
               row (for example “CAS import” instead of “Open Date”).
             </p>
             <p className="mt-2 text-sm text-wsu-gray">
-              The same “In title” text is repeated as the first column,{" "}
+              The first column,{" "}
               <strong className="text-wsu-gray-dark">Application window</strong>, on the public
-              Program questions, Answers, and Documents tables so each row is tied to the correct
-              Fall vs Spring (etc.) offering when a program has more than one CAS Program ID.
+              Program questions, Answers, and Documents tables uses{" "}
+              <strong className="text-wsu-gray-dark">Start Term</strong> (and Start Year when
+              present) from Program Attributes for that row’s Program ID, then your “In title” line
+              if the term is blank. Rows that are identical except for Program ID/term are merged
+              into one line with{" "}
+              <strong className="text-wsu-gray-dark">Fall/Spring</strong>-style labels when the
+              terms differ.
             </p>
             <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-wsu-gray/15 bg-wsu-cream/60 px-4 py-3">
               <input

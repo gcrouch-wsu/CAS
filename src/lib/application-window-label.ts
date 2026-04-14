@@ -1,6 +1,22 @@
 import type { CasOffering, TermFieldSetting } from "./types";
 import { cleanProgramId } from "./parse-cas";
 
+/** Prepended on Questions / Answers / Documents so each row shows Fall vs Spring (etc.) first. */
+export const APPLICATION_WINDOW_COLUMN = "Application window";
+
+/** Start Term / Start Year from Program Attributes (case-insensitive keys on termParts). */
+export function startTermYearPrimary(o: CasOffering): string | null {
+  const map = new Map(
+    o.termParts.map((p) => [p.key.trim().toLowerCase(), (p.value || "").trim()])
+  );
+  const st = map.get("start term");
+  const sy = map.get("start year");
+  if (st && sy) return `${st} · ${sy}`;
+  if (st) return st;
+  if (sy) return sy;
+  return null;
+}
+
 /** Bold line segments from “In title” term fields (same logic as public application-window cards). */
 export function applicationWindowHeadingText(
   o: CasOffering,
@@ -44,7 +60,7 @@ export function applicationWindowFallbackFromTermParts(o: CasOffering): string |
   return null;
 }
 
-/** Full title for a card or table row. */
+/** Full title for application-window cards (respects “In title” first, then fallbacks). */
 export function applicationWindowCardTitle(
   o: CasOffering,
   settings: TermFieldSetting[]
@@ -60,8 +76,18 @@ export function applicationWindowCardTitle(
   return "—";
 }
 
-/** Prepended on Questions / Answers / Documents so each row shows Fall vs Spring (etc.) first. */
-export const APPLICATION_WINDOW_COLUMN = "Application window";
+/**
+ * Label for the prepended “Application window” column on detail tables: Start Term (and year)
+ * first, then the same fallbacks as the cards.
+ */
+export function detailTableApplicationWindowLabel(
+  o: CasOffering,
+  settings: TermFieldSetting[]
+): string {
+  const primary = startTermYearPrimary(o);
+  if (primary) return primary;
+  return applicationWindowCardTitle(o, settings);
+}
 
 function stripConflictingRowKeys(r: Record<string, string>): Record<string, string> {
   const out = { ...r };
@@ -85,9 +111,127 @@ export function augmentDetailRowsWithApplicationWindow(
     const base = stripConflictingRowKeys(r);
     const pid = cleanProgramId(base["Program ID"] || "");
     const o = pid ? byPid.get(pid) : undefined;
-    const label = o ? applicationWindowCardTitle(o, settings) : "—";
+    const label = o ? detailTableApplicationWindowLabel(o, settings) : "—";
     return { [APPLICATION_WINDOW_COLUMN]: label, ...base };
   });
+}
+
+function programIdFromRow(r: Record<string, string>): string {
+  const direct = r["Program ID"] ?? r["Program Id"];
+  if (typeof direct === "string" && direct.trim()) return cleanProgramId(direct);
+  for (const [k, v] of Object.entries(r)) {
+    if (k.trim().toLowerCase() === "program id" && typeof v === "string" && v.trim()) {
+      return cleanProgramId(v);
+    }
+  }
+  return "";
+}
+
+/** Stable signature for “same requirement text” across Program IDs / terms. */
+function detailRowContentSignature(row: Record<string, string>): string {
+  const entries = Object.entries(row)
+    .filter(([k]) => {
+      const kl = k.trim().toLowerCase();
+      if (kl === "program id") return false;
+      if (kl === APPLICATION_WINDOW_COLUMN.toLowerCase()) return false;
+      return true;
+    })
+    .map(([k, v]) => [k, (v ?? "").trim()] as const)
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return JSON.stringify(entries);
+}
+
+/** Fall before Spring for combined labels like Fall/Spring. */
+function seasonSortRank(s: string): number {
+  const l = s.toLowerCase();
+  if (l.includes("fall")) return 0;
+  if (l.includes("spring")) return 1;
+  if (l.includes("summer")) return 2;
+  if (l.includes("winter")) return 3;
+  return 99;
+}
+
+function distinctSortedTermLabels(labels: string[]): string {
+  const u = [...new Set(labels.map((x) => x.trim()).filter(Boolean))];
+  if (u.length === 0) return "";
+  u.sort((a, b) => seasonSortRank(a) - seasonSortRank(b) || a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return u.join("/");
+}
+
+function mergeAugmentedRowBucket(
+  bucket: Record<string, string>[],
+  byPid: Map<string, CasOffering>,
+  settings: TermFieldSetting[]
+): Record<string, string> {
+  const template = { ...bucket[0] };
+  const pids: string[] = [];
+  for (const r of bucket) {
+    const p = programIdFromRow(r);
+    if (p && !pids.includes(p)) pids.push(p);
+  }
+  const termLabels: string[] = [];
+  for (const pid of pids) {
+    const o = byPid.get(pid);
+    if (!o) continue;
+    const t = startTermYearPrimary(o);
+    if (t) termLabels.push(t);
+  }
+  let windowLabel = distinctSortedTermLabels(termLabels);
+  if (!windowLabel) {
+    const fromCol = bucket.map((r) => r[APPLICATION_WINDOW_COLUMN]).find((x) => x && x.trim() !== "—");
+    windowLabel = fromCol?.trim() || "—";
+  }
+  template[APPLICATION_WINDOW_COLUMN] = windowLabel;
+  template["Program ID"] = pids.join(", ");
+  return template;
+}
+
+function refreshAugmentedRowWindow(
+  row: Record<string, string>,
+  byPid: Map<string, CasOffering>,
+  settings: TermFieldSetting[]
+): Record<string, string> {
+  const pid = programIdFromRow(row);
+  const o = pid ? byPid.get(pid) : undefined;
+  const label = o ? detailTableApplicationWindowLabel(o, settings) : row[APPLICATION_WINDOW_COLUMN] || "—";
+  return { ...row, [APPLICATION_WINDOW_COLUMN]: label };
+}
+
+/**
+ * After augmenting with {@link augmentDetailRowsWithApplicationWindow}, merge rows whose
+ * non–Program-ID content is identical but terms differ (e.g. one Fall row + one Spring row → one
+ * row with Application window “Fall/Spring”).
+ */
+export function collapseAugmentedDetailRowsByMatchingContent(
+  rows: Record<string, string>[],
+  offerings: CasOffering[],
+  settings: TermFieldSetting[]
+): Record<string, string>[] {
+  if (rows.length === 0) return rows;
+  const byPid = new Map<string, CasOffering>();
+  for (const o of offerings) {
+    byPid.set(cleanProgramId(o.programId), o);
+  }
+  const sigOrder: string[] = [];
+  const buckets = new Map<string, Record<string, string>[]>();
+  for (const r of rows) {
+    const sig = detailRowContentSignature(r);
+    if (!buckets.has(sig)) {
+      sigOrder.push(sig);
+      buckets.set(sig, []);
+    }
+    buckets.get(sig)!.push(r);
+  }
+  const out: Record<string, string>[] = [];
+  for (const sig of sigOrder) {
+    const bucket = buckets.get(sig)!;
+    if (bucket.length === 1) {
+      out.push(refreshAugmentedRowWindow(bucket[0], byPid, settings));
+    } else {
+      out.push(mergeAugmentedRowBucket(bucket, byPid, settings));
+    }
+  }
+  return out;
 }
 
 export function prependApplicationWindowColumn(columns: string[]): string[] {

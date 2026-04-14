@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   applicationWindowCardTitle,
   augmentDetailRowsWithApplicationWindow,
+  collapseAugmentedDetailRowsByMatchingContent,
   prependApplicationWindowColumn,
 } from "@/lib/application-window-label";
 import { linkifyHeroSegment } from "@/lib/hero-linkify";
@@ -253,29 +254,30 @@ function ProgramDetail({
   answerColumns: string[];
   documentColumns: string[];
 }) {
-  const questionsWithWindow = useMemo(
-    () =>
-      augmentDetailRowsWithApplicationWindow(
-        group.questions,
-        group.offerings,
-        termFieldSettings
-      ),
-    [group.questions, group.offerings, termFieldSettings]
-  );
-  const answersWithWindow = useMemo(
-    () =>
-      augmentDetailRowsWithApplicationWindow(group.answers, group.offerings, termFieldSettings),
-    [group.answers, group.offerings, termFieldSettings]
-  );
-  const documentsWithWindow = useMemo(
-    () =>
-      augmentDetailRowsWithApplicationWindow(
-        group.documents,
-        group.offerings,
-        termFieldSettings
-      ),
-    [group.documents, group.offerings, termFieldSettings]
-  );
+  const questionsWithWindow = useMemo(() => {
+    const aug = augmentDetailRowsWithApplicationWindow(
+      group.questions,
+      group.offerings,
+      termFieldSettings
+    );
+    return collapseAugmentedDetailRowsByMatchingContent(aug, group.offerings, termFieldSettings);
+  }, [group.questions, group.offerings, termFieldSettings]);
+  const answersWithWindow = useMemo(() => {
+    const aug = augmentDetailRowsWithApplicationWindow(
+      group.answers,
+      group.offerings,
+      termFieldSettings
+    );
+    return collapseAugmentedDetailRowsByMatchingContent(aug, group.offerings, termFieldSettings);
+  }, [group.answers, group.offerings, termFieldSettings]);
+  const documentsWithWindow = useMemo(() => {
+    const aug = augmentDetailRowsWithApplicationWindow(
+      group.documents,
+      group.offerings,
+      termFieldSettings
+    );
+    return collapseAugmentedDetailRowsByMatchingContent(aug, group.offerings, termFieldSettings);
+  }, [group.documents, group.offerings, termFieldSettings]);
   const questionColumnsWithWindow = useMemo(
     () => prependApplicationWindowColumn(questionColumns),
     [questionColumns]
