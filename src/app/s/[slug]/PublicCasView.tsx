@@ -129,7 +129,7 @@ export default function PublicCasView({
     (initial.orgQuestions.length > 0 || initial.orgAnswers.length > 0);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10">
+    <div className="mx-auto max-w-6xl px-4 py-10 lg:max-w-[88rem] lg:px-6">
       <header className="mb-10 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-widest text-wsu-crimson">
           {initial.heroEyebrow}
@@ -372,7 +372,11 @@ function ProgramDetail({
       <section className="space-y-3">
         {sectionTitle("Program questions")}
         {group.questions.length ? (
-          <TableFromRecords rows={questionsWithWindow} columns={questionColumnsWithWindow} />
+          <TableFromRecords
+            rows={questionsWithWindow}
+            columns={questionColumnsWithWindow}
+            layout="stacked"
+          />
         ) : (
           <p className="text-sm text-wsu-gray">None in export.</p>
         )}
@@ -399,12 +403,29 @@ function ProgramDetail({
   );
 }
 
+/** Puts the most important question fields first in stacked (card) layout. */
+function orderKeysForStacked(keys: string[]): string[] {
+  const want = ["Application window", "Question", "Question Block", "Question Type", "Required"];
+  const picked: string[] = [];
+  for (const w of want) {
+    const hit = keys.find((k) => k.trim().toLowerCase() === w.toLowerCase());
+    if (hit && !picked.includes(hit)) picked.push(hit);
+  }
+  for (const k of keys) {
+    if (!picked.includes(k)) picked.push(k);
+  }
+  return picked;
+}
+
 function TableFromRecords({
   rows,
   columns,
+  layout = "table",
 }: {
   rows: Record<string, string>[];
   columns?: string[];
+  /** `stacked`: each CAS row is a card (label above value) — easier for long question text. */
+  layout?: "table" | "stacked";
 }) {
   const keys = useMemo(() => {
     if (columns && columns.length > 0) {
@@ -412,6 +433,11 @@ function TableFromRecords({
     }
     return unionRowKeysWithData(rows);
   }, [rows, columns]);
+
+  const stackedKeys = useMemo(
+    () => (layout === "stacked" ? orderKeysForStacked(keys) : keys),
+    [layout, keys]
+  );
 
   if (rows.length === 0) return null;
   if (keys.length === 0) {
@@ -423,13 +449,50 @@ function TableFromRecords({
       </p>
     );
   }
+
+  if (layout === "stacked") {
+    return (
+      <div className="mt-3 space-y-4">
+        {rows.map((r, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-wsu-gray/15 bg-white p-5 shadow-sm ring-1 ring-wsu-gray/5"
+          >
+            <dl className="space-y-4">
+              {stackedKeys.map((k) => {
+                const raw = getRecordValueCi(r, k) ?? "";
+                const isQuestion = k.trim().toLowerCase() === "question";
+                return (
+                  <div key={k}>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-wsu-crimson">
+                      {k}
+                    </dt>
+                    <dd
+                      className={`mt-1.5 whitespace-pre-wrap text-wsu-gray-dark ${
+                        isQuestion
+                          ? "text-base font-medium leading-relaxed text-wsu-gray-dark"
+                          : "text-sm leading-relaxed"
+                      }`}
+                    >
+                      {raw || "—"}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-3 overflow-x-auto rounded-lg border border-wsu-gray/15">
       <table className="min-w-full divide-y divide-wsu-gray/10 text-left text-sm">
         <thead className="bg-wsu-crimson/10 text-xs font-semibold uppercase tracking-wide text-wsu-gray-dark">
           <tr>
             {keys.map((k) => (
-              <th key={k} className="whitespace-nowrap px-3 py-2.5">
+              <th key={k} className="whitespace-nowrap px-3 py-2.5 align-bottom">
                 {k}
               </th>
             ))}
@@ -439,7 +502,10 @@ function TableFromRecords({
           {rows.map((r, i) => (
             <tr key={i} className="hover:bg-wsu-cream/40">
               {keys.map((k) => (
-                <td key={k} className="max-w-xs whitespace-pre-wrap px-3 py-2.5 text-wsu-gray-dark">
+                <td
+                  key={k}
+                  className="min-w-[10rem] max-w-[min(48rem,70vw)] align-top whitespace-pre-wrap px-3 py-3 text-wsu-gray-dark"
+                >
                   {getRecordValueCi(r, k) ?? ""}
                 </td>
               ))}
