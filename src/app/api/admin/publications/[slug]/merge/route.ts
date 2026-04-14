@@ -3,6 +3,7 @@ import { mergePublicationFromUpload } from "@/lib/cas-store";
 import { unauthorizedIfNotAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 export async function POST(
   request: Request,
