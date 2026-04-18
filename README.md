@@ -2,9 +2,9 @@
 
 Next.js app for publishing **CAS Excel exports** (`.xlsx`) to a **read-only public page** with program search, a default program, and admin-controlled **summary columns**. Data is stored in **Vercel Blob only** (no database).
 
-Remote repo: [github.com/gcrouch-wsu/CAS](https://github.com/gcrouch-wsu/CAS).
+Remote repo: [github.com/gcrouch-wsu/wsu-gradschool-cas](https://github.com/gcrouch-wsu/wsu-gradschool-cas).
 
-> Local folder name is `cas` (npm naming). Your GitHub repo can stay `CAS`.
+> Local folder, npm package, and GitHub repo all use `wsu-gradschool-cas`.
 
 ## Environment variables (Vercel)
 

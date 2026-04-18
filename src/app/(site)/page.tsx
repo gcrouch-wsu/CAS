@@ -37,7 +37,7 @@ export default function Home() {
       </div>
       <p className="mt-10 text-center text-xs text-wsu-gray">
         <a
-          href="https://github.com/gcrouch-wsu/CAS"
+          href="https://github.com/gcrouch-wsu/wsu-gradschool-cas"
           className="underline decoration-wsu-gray/30 hover:text-wsu-crimson"
         >
           Source on GitHub

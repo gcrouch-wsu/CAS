@@ -28,6 +28,7 @@
 *.xlsx
 *.xls
 ~$*
+dump_excel.js
 
 # debug
 npm-debug.log*
