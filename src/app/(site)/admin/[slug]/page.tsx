@@ -44,6 +44,28 @@ type BrandingAdminResponse = {
   };
   currentSnapshotId: string | null;
   currentProfiles: string[];
+  captureManifest: {
+    publicationSlug: string;
+    publicationTitle: string;
+    publicationUpdatedAt: string;
+    blobPath: string;
+    localAppUrl: string;
+    profiles: {
+      profile: string;
+      label: string;
+      expectedExcelName: string;
+      expectedProgramCount: number;
+      capturedProgramCount: number;
+      missingProgramCount: number;
+      missingProgramIds: string[];
+      status: "current" | "missing" | "stale" | "not_applicable";
+      hasMissingIds: boolean;
+      dataNewerThanSnapshot: boolean;
+      statusDetail: string;
+      latestSnapshotId: string | null;
+      latestCompletedAt: string | null;
+    }[];
+  };
   branding: {
     rootDir: string;
     profiles: {
@@ -773,8 +795,8 @@ export default function AdminPublicationPage() {
             </h2>
             <p className="mt-2 text-sm text-wsu-gray">
               Branding is joined to this publication by <strong className="text-wsu-gray-dark">Program ID</strong>.
-              Run the profile-specific capture here, then use the public page to review the student-facing
-              HTML branding preview beside the flattened export data.
+              This page publishes the capture manifest; the local branding capture app reads that manifest,
+              opens your logged-in browser, captures stale/missing profiles, and uploads the latest snapshot.
             </p>
             {branding ? (
               <>
@@ -804,8 +826,31 @@ export default function AdminPublicationPage() {
                     {branding.currentSnapshotId ?? "none"}
                   </span>
                 </p>
+                <div className="mt-4 rounded-lg border border-wsu-crimson/20 bg-wsu-crimson/5 px-4 py-4">
+                  <p className="text-sm font-semibold text-wsu-gray-dark">
+                    Local capture workflow
+                  </p>
+                  <p className="mt-1 text-sm text-wsu-gray">
+                    Open the local app, load the latest publication manifest from Vercel, then run
+                    guided login and capture for any profile marked missing or stale. Capture uploads
+                    automatically; the public page uses the latest completed snapshot after refresh.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <a
+                      href={branding.captureManifest.localAppUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg bg-wsu-crimson px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-wsu-crimson-dark"
+                    >
+                      Open local branding capture app
+                    </a>
+                    <span className="font-mono text-xs text-wsu-gray-dark">
+                      {branding.captureManifest.blobPath}
+                    </span>
+                  </div>
+                </div>
                 <div className="mt-5 space-y-4">
-                  {branding.branding.profiles.map((profileRow) => (
+                  {branding.captureManifest.profiles.map((profileRow) => (
                     <div
                       key={profileRow.profile}
                       className="rounded-lg border border-wsu-gray/10 bg-wsu-cream/25 px-4 py-4"
@@ -813,16 +858,17 @@ export default function AdminPublicationPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-wsu-gray-dark">
-                            {profileRow.profile}
+                            {profileRow.label}
                           </p>
                           <p className="mt-1 text-xs text-wsu-gray">
-                            Auth: <span className="font-mono">{profileRow.authPath}</span>
+                            Expected Excel: <span className="font-mono">{profileRow.expectedExcelName}</span>
                           </p>
                           <p className="mt-1 text-xs text-wsu-gray">
-                            Trail: <span className="font-mono">{profileRow.trailPath}</span>
+                            Latest snapshot:{" "}
+                            <span className="font-mono">{profileRow.latestSnapshotId ?? "none"}</span>
                           </p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="hidden">
                           <button
                             type="button"
                             disabled={brandingBusyProfile !== null}
@@ -848,41 +894,43 @@ export default function AdminPublicationPage() {
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-wsu-gray">
                         <span
                           className={`rounded-full px-2 py-0.5 font-semibold ${
-                            profileRow.status.status === "completed"
+                            profileRow.status === "current"
                               ? "bg-emerald-100 text-emerald-800"
-                              : profileRow.status.status === "running"
-                                ? "bg-sky-100 text-sky-800"
-                                : profileRow.status.status === "error"
+                              : profileRow.status === "stale"
+                                ? "bg-amber-100 text-amber-900"
+                                : profileRow.status === "missing"
                                   ? "bg-red-100 text-red-800"
                                   : "bg-wsu-gray/10 text-wsu-gray-dark"
                           }`}
                         >
-                          {profileRow.status.status}
+                          {profileRow.status.replace("_", " ")}
                         </span>
-                        {profileRow.status.mode ? <span>mode: {profileRow.status.mode}</span> : null}
-                        {profileRow.status.message ? <span>{profileRow.status.message}</span> : null}
-                        {profileRow.status.completedPrograms !== undefined &&
-                        profileRow.status.totalPrograms !== undefined ? (
-                          <span>
-                            {profileRow.status.completedPrograms}/{profileRow.status.totalPrograms} Program IDs
-                          </span>
-                        ) : null}
+                        <span>Expected {profileRow.expectedProgramCount} Program IDs</span>
+                        <span>Captured {profileRow.capturedProgramCount}</span>
+                        <span>Missing {profileRow.missingProgramCount}</span>
                       </div>
-                      {profileRow.latestSnapshot ? (
+                      <p className="mt-2 text-xs text-wsu-gray">
+                        {profileRow.statusDetail}
+                      </p>
+                      {profileRow.missingProgramIds.length > 0 ? (
                         <p className="mt-2 text-xs text-wsu-gray">
-                          Latest snapshot:{" "}
+                          First missing IDs:{" "}
                           <span className="font-mono text-wsu-gray-dark">
-                            {profileRow.latestSnapshot.snapshotId}
+                            {profileRow.missingProgramIds.join(", ")}
                           </span>
                           {" · "}
-                          ok {profileRow.latestSnapshot.okPrograms ?? 0}
+                          Last completed: {profileRow.latestCompletedAt ?? "not captured"}
                           {" · "}
-                          empty {profileRow.latestSnapshot.emptyShellPrograms ?? 0}
+                          Expected {profileRow.expectedProgramCount} Program IDs
                           {" · "}
-                          error {profileRow.latestSnapshot.errorPrograms ?? 0}
+                          Captured {profileRow.capturedProgramCount}
                         </p>
                       ) : (
-                        <p className="mt-2 text-xs text-wsu-gray">No completed snapshot yet.</p>
+                        <p className="mt-2 text-xs text-wsu-gray">
+                          {profileRow.latestCompletedAt
+                            ? `Last completed: ${profileRow.latestCompletedAt}`
+                            : "No completed capture yet."}
+                        </p>
                       )}
                     </div>
                   ))}

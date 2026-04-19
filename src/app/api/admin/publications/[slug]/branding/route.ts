@@ -7,18 +7,41 @@ import { z } from "zod";
 import {
   authPathForProfile,
   buildBrandingAdminState,
+  getLatestBrandingByProgramId,
   nextSnapshotId,
   snapshotPath,
   statusPathForProfile,
   trailPathForProfile,
 } from "@/lib/branding-store";
 import { getPublicationBySlug } from "@/lib/cas-store";
+import { inferCasProfile } from "@/lib/cas-profile";
 import { unauthorizedIfNotAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const DEFAULT_PROFILES = ["gradcas", "engineeringcas"];
+
+function expectedIdsByProfile(row: NonNullable<Awaited<ReturnType<typeof getPublicationBySlug>>>) {
+  const out = {
+    gradcas: new Set<string>(),
+    engineeringcas: new Set<string>(),
+  };
+  for (const group of row.data.groups) {
+    for (const offering of group.offerings) {
+      const programId = offering.programId.trim();
+      if (!programId) continue;
+      const profile = inferCasProfile({
+        programId,
+        sourceProfile: offering.sourceProfile,
+        sourceFileName: row.data.sourceFileName,
+      });
+      if (profile === "engineeringcas") out.engineeringcas.add(programId);
+      else out.gradcas.add(programId);
+    }
+  }
+  return out;
+}
 
 const postSchema = z.object({
   action: z.enum(["guide", "export"]),
@@ -63,7 +86,51 @@ export async function GET(
   const { slug } = await ctx.params;
   const row = await getPublicationBySlug(slug);
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const branding = await buildBrandingAdminState(DEFAULT_PROFILES);
+  const [branding, brandingByProgramId] = await Promise.all([
+    buildBrandingAdminState(DEFAULT_PROFILES),
+    getLatestBrandingByProgramId(DEFAULT_PROFILES),
+  ]);
+  const expected = expectedIdsByProfile(row);
+  const profileStatus = DEFAULT_PROFILES.map((profile) => {
+    const ids = [...expected[profile as keyof typeof expected]];
+    const captured = ids.filter((id) => brandingByProgramId.has(id));
+    const missing = ids.filter((id) => !brandingByProgramId.get(id));
+    const latest = branding.profiles.find((p) => p.profile === profile)?.latestSnapshot ?? null;
+    const hasMissingIds = missing.length > 0;
+    const dataNewerThanSnapshot = Boolean(
+      latest?.completedAt && latest.completedAt < row.updated_at
+    );
+    const status =
+      ids.length === 0
+        ? "not_applicable"
+        : captured.length === 0 || hasMissingIds
+          ? "missing"
+          : dataNewerThanSnapshot
+            ? "stale"
+            : "current";
+    return {
+      profile,
+      label: profile === "gradcas" ? "GradCAS" : "EngineeringCAS",
+      expectedExcelName: profile === "gradcas" ? "GradCAS.xlsx" : "EngCAS.xlsx",
+      expectedProgramCount: ids.length,
+      capturedProgramCount: captured.length,
+      missingProgramCount: missing.length,
+      missingProgramIds: missing.slice(0, 25),
+      status,
+      hasMissingIds,
+      dataNewerThanSnapshot,
+      statusDetail:
+        status === "missing"
+          ? `${missing.length} expected Program ID${missing.length === 1 ? "" : "s"} missing from the latest branding snapshot.`
+          : status === "stale"
+            ? "All expected Program IDs have captures, but the latest branding snapshot predates the latest publication save."
+            : status === "current"
+              ? "All expected Program IDs have captures and the latest snapshot is newer than the publication save."
+              : "This publication has no expected Program IDs for this profile.",
+      latestSnapshotId: latest?.snapshotId ?? null,
+      latestCompletedAt: latest?.completedAt ?? null,
+    };
+  });
   return NextResponse.json({
     currentCoverage: row.data.brandingCoverage ?? {
       totalOfferings: row.data.groups.reduce((sum, group) => sum + group.offerings.length, 0),
@@ -72,6 +139,14 @@ export async function GET(
     },
     currentSnapshotId: row.data.brandingSnapshotId ?? null,
     currentProfiles: row.data.brandingProfiles ?? [],
+    captureManifest: {
+      publicationSlug: row.slug,
+      publicationTitle: row.title,
+      publicationUpdatedAt: row.updated_at,
+      blobPath: "cas-branding-capture/current.json",
+      profiles: profileStatus,
+      localAppUrl: "http://127.0.0.1:5050",
+    },
     branding,
   });
 }

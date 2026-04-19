@@ -32,6 +32,8 @@ export interface ProgramBranding {
 
 export interface CasOffering {
   programId: string;
+  /** Capture profile that produced this Program ID, e.g. gradcas or engineeringcas. */
+  sourceProfile?: string;
   /** Legacy single-line summary (still stored for exports). */
   termLine: string;
   /** Columns that differ within the program group (raw values). */

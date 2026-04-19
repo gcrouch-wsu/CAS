@@ -178,6 +178,13 @@ function rowsForProgram(
   return rows.filter((r) => cleanProgramId(r["Program ID"] || "") === pid);
 }
 
+function inferSourceProfileFromFileName(sourceFileName: string): string {
+  const name = sourceFileName.toLowerCase();
+  if (name.includes("engineeringcas") || name.includes("engcas")) return "engineeringcas";
+  if (name.includes("gradcas")) return "gradcas";
+  return "";
+}
+
 /**
  * Per–Program ID dedupe only. On the public page, identical rows across terms are merged into
  * one line (Fall/Spring, etc.); see `application-window-label.ts` collapse helpers.
@@ -572,8 +579,9 @@ function buildGroupsFromSheets(params: {
   answersAll: Record<string, string>[];
   orgQuestions: Record<string, string>[];
   orgAnswers: Record<string, string>[];
+  sourceProfile: string;
 }): CasProgramGroup[] {
-  const { pa, recRows, questionsAll, documentsAll, answersAll } = params;
+  const { pa, recRows, questionsAll, documentsAll, answersAll, sourceProfile } = params;
   const recMap = mergeRecs(pa, recRows);
   const byGroup = new Map<string, Record<string, string>[]>();
   for (const row of pa) {
@@ -591,6 +599,7 @@ function buildGroupsFromSheets(params: {
       const varying = computeVarying(row, shared);
       return {
         programId: pid,
+        ...(sourceProfile ? { sourceProfile } : {}),
         termLine: buildTermLine(row),
         varying,
         termParts: buildTermParts(row),
@@ -629,6 +638,7 @@ function buildGroupsFromSheets(params: {
 
 export function parseCasWorkbook(buffer: Buffer, sourceFileName: string): CasPublicationData {
   const wb = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const sourceProfile = inferSourceProfileFromFileName(sourceFileName);
 
   const pa = readSheet(wb, "Program Attributes").filter((r) => cleanProgramId(r["Program ID"] || ""));
   const recRows = readSheet(wb, "Recommendations");
@@ -646,6 +656,7 @@ export function parseCasWorkbook(buffer: Buffer, sourceFileName: string): CasPub
     answersAll,
     orgQuestions,
     orgAnswers,
+    sourceProfile,
   });
 
   const base: CasPublicationData = {

@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover - dashboard still works without row counts
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BRANDING_ROOT = REPO_ROOT / ".branding-data"
 UPLOAD_ROOT = BRANDING_ROOT / "uploads"
+CAPTURE_MANIFEST_FILE = BRANDING_ROOT / "capture-manifest.json"
 PROFILES = {
     "gradcas": {
         "label": "GradCAS",
@@ -136,6 +137,34 @@ def read_text(path: Path, max_chars: int = 5000) -> str:
     except Exception:
         return ""
     return text[-max_chars:]
+
+
+def capture_manifest() -> dict[str, Any] | None:
+    value = read_json(CAPTURE_MANIFEST_FILE)
+    return value if isinstance(value, dict) else None
+
+
+def manifest_profile(profile: str) -> dict[str, Any] | None:
+    manifest = capture_manifest()
+    profiles = manifest.get("profiles") if manifest else None
+    row = profiles.get(profile) if isinstance(profiles, dict) else None
+    return row if isinstance(row, dict) else None
+
+
+def manifest_program_ids(profile: str) -> list[str]:
+    row = manifest_profile(profile)
+    ids = row.get("programIds") if row else None
+    if not isinstance(ids, list):
+        return []
+    return [str(value).strip() for value in ids if str(value).strip()]
+
+
+def write_manifest_id_file(profile: str, program_ids: list[str]) -> Path:
+    jobs_root = BRANDING_ROOT / "jobs"
+    jobs_root.mkdir(parents=True, exist_ok=True)
+    target = jobs_root / f"{profile}-manifest-program-ids.txt"
+    target.write_text("\n".join(program_ids) + "\n", encoding="utf-8")
+    return target
 
 
 def write_job(profile: str, **updates: Any) -> None:
@@ -327,6 +356,56 @@ def upload_latest_snapshot(profile: str) -> None:
     run_command(profile, "upload_latest", command)
 
 
+def load_capture_manifest(profile: str) -> None:
+    profile_root(profile).mkdir(parents=True, exist_ok=True)
+    log_file = log_path(profile)
+    command = ["node", "tools/branding/read-capture-manifest.mjs"]
+    log_file.write_text(f"[{utc_now()}] Loading capture manifest: {' '.join(command)}\n\n", encoding="utf-8")
+    write_job(
+        profile,
+        action="load_manifest",
+        status="running",
+        startedAt=utc_now(),
+        message="Loading capture manifest from Vercel Blob.",
+    )
+    result = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        env=process_env(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    with log_file.open("a", encoding="utf-8") as handle:
+        if result.stdout:
+            handle.write("\n[stdout]\n")
+            handle.write(result.stdout)
+        if result.stderr:
+            handle.write("\n[stderr]\n")
+            handle.write(result.stderr)
+    if result.returncode != 0:
+        write_job(
+            profile,
+            status="error",
+            completedAt=utc_now(),
+            message=result.stderr.strip() or result.stdout.strip() or "Could not load capture manifest.",
+        )
+        return
+    try:
+        parsed = json.loads(result.stdout)
+    except Exception as exc:
+        write_job(profile, status="error", completedAt=utc_now(), message=f"Invalid manifest JSON: {exc}")
+        return
+    CAPTURE_MANIFEST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CAPTURE_MANIFEST_FILE.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+    write_job(
+        profile,
+        status="completed",
+        completedAt=utc_now(),
+        message=f"Loaded capture manifest for {parsed.get('publicationTitle', 'current publication')}.",
+    )
+
+
 def start_thread(profile: str, label: str, command: list[str]) -> None:
     target = run_popen_command if label == "guide" else run_command
     thread = threading.Thread(target=target, args=(profile, label, command), daemon=True)
@@ -339,14 +418,14 @@ def capture_and_upload(profile: str, xlsx_path: Path, delay_ms: int) -> None:
     status_file = status_path(profile)
     auth_file = profile_root(profile) / "user.json"
     trail_file = profile_root(profile) / "trail.json"
+    manifest_ids = manifest_program_ids(profile)
+    id_file = write_manifest_id_file(profile, manifest_ids) if manifest_ids else None
     export_command = [
         "node",
         "tools/branding/cli.mjs",
         "export",
         "--profile",
         profile,
-        "--xlsx",
-        str(xlsx_path),
         "--output-dir",
         str(output_dir),
         "--auth-file",
@@ -359,6 +438,10 @@ def capture_and_upload(profile: str, xlsx_path: Path, delay_ms: int) -> None:
         str(delay_ms),
         "--non-interactive",
     ]
+    if id_file:
+        export_command.extend(["--id-file", str(id_file)])
+    else:
+        export_command.extend(["--xlsx", str(xlsx_path)])
     upload_command = [
         "node",
         "tools/branding/upload-snapshot.mjs",
@@ -373,7 +456,11 @@ def capture_and_upload(profile: str, xlsx_path: Path, delay_ms: int) -> None:
         action="capture",
         status="running",
         startedAt=utc_now(),
-        message=f"Capturing {xlsx_path.name}",
+        message=(
+            f"Capturing {len(manifest_ids)} Program IDs from Vercel manifest"
+            if manifest_ids
+            else f"Capturing {xlsx_path.name}"
+        ),
         snapshotId=snapshot_id,
     )
     result = subprocess.run(
@@ -546,12 +633,21 @@ def render_profile(profile: str, config: dict[str, Any], env: dict[str, str]) ->
     token_present = bool(env.get("BLOB_READ_WRITE_TOKEN"))
     uploaded_xlsx = latest_upload(profile)
     xlsx = uploaded_xlsx or config["xlsx"]
-    program_count = count_program_ids(Path(xlsx))
+    capture_row = manifest_profile(profile)
+    manifest_ids = manifest_program_ids(profile)
+    program_count = len(manifest_ids) if manifest_ids else count_program_ids(Path(xlsx))
     progress = progress_line(status, program_count)
     status_id = f"{profile}-status"
     log_id = f"{profile}-log"
     file_output_id = f"{profile}-file-output"
     file_input_id = f"{profile}-file"
+    manifest_source_line = "No Vercel capture manifest loaded. Capture will use the selected Excel report."
+    if capture_row:
+        latest_snapshot = capture_row.get("latestSnapshotId") or "none"
+        manifest_source_line = (
+            f"Vercel manifest: {len(manifest_ids)} Program IDs for "
+            f"{escape(str(capture_row.get('label') or config['label']))}; latest snapshot {escape(str(latest_snapshot))}."
+        )
     manifest_line = "No completed local capture yet."
     if manifest:
         manifest_line = (
@@ -568,6 +664,7 @@ def render_profile(profile: str, config: dict[str, Any], env: dict[str, str]) ->
         <span class="pill">Blob token: {"present" if token_present else "missing"}</span>
         <span class="pill">Progress: {escape(progress)}</span>
         <span><strong>Current Excel report:</strong> {escape(str(xlsx))}</span>
+        <span><strong>Capture source:</strong> {manifest_source_line}</span>
         <span>Latest local: {manifest_line}</span>
       </div>
       <div class="step-card">
@@ -594,7 +691,7 @@ def render_profile(profile: str, config: dict[str, Any], env: dict[str, str]) ->
       </div>
       <div class="step-card">
         <h3>3. Capture and upload</h3>
-        <p class="warn">This opens Edge and visits every Program ID from the selected Excel report. It uploads automatically when capture finishes.</p>
+        <p class="warn">This opens Edge and visits every Program ID from the Vercel manifest when loaded. If no manifest is loaded, it falls back to the selected Excel report. It uploads automatically when capture finishes.</p>
         <form method="post" action="{url_for('capture', profile=profile)}">
           <input type="hidden" name="xlsx" value="{escape(str(xlsx))}">
           <label for="{profile}-delay">Delay per Program ID, ms</label>
@@ -623,6 +720,39 @@ def render_profile(profile: str, config: dict[str, Any], env: dict[str, str]) ->
         <button class="copy-button" type="button" onclick="copyText('{log_id}', this)">Copy</button>
       </div>
       <pre id="{log_id}">{escape(log_text or "No command log yet.")}</pre>
+    </section>
+    """
+
+
+def render_capture_manifest_summary(active_profile: str) -> str:
+    manifest = capture_manifest()
+    if not manifest:
+        detail = '<p class="warn">No capture manifest loaded yet. After saving/uploading in Vercel admin, load it here so this tool captures the same Program IDs the public site expects.</p>'
+    else:
+        profiles = manifest.get("profiles") if isinstance(manifest.get("profiles"), dict) else {}
+        rows = []
+        for profile, config in PROFILES.items():
+            row = profiles.get(profile, {}) if isinstance(profiles, dict) else {}
+            ids = row.get("programIds") if isinstance(row, dict) else []
+            count = len(ids) if isinstance(ids, list) else 0
+            latest = row.get("latestSnapshotId") if isinstance(row, dict) else None
+            rows.append(
+                f"<span class=\"pill\">{escape(config['label'])}: {count} IDs; latest {escape(str(latest or 'none'))}</span>"
+            )
+        detail = (
+            f"<p class=\"warn\"><strong>{escape(str(manifest.get('publicationTitle', 'Current publication')))}</strong> "
+            f"({escape(str(manifest.get('publicationSlug', '')))}), generated "
+            f"{escape(str(manifest.get('generatedAt', 'unknown')))}</p><div class=\"meta\">{''.join(rows)}</div>"
+        )
+    return f"""
+    <section class="card" style="margin-bottom: 18px;">
+      <h2>Vercel publication manifest</h2>
+      {detail}
+      <form method="post" action="{url_for('load_manifest', profile=active_profile)}">
+        <div class="actions">
+          <button type="submit" class="secondary">Load latest publication from Vercel</button>
+        </div>
+      </form>
     </section>
     """
 
@@ -672,6 +802,7 @@ def index() -> str:
       </form>
       <p class="warn">This saves to .env.local, which is ignored by git. The deployed Vercel app still needs the same token configured in Vercel.</p>
     </section>
+    {render_capture_manifest_summary(active_profile)}
     <div class="grid">{cards}</div>
     """
     return page_shell(body)
@@ -691,6 +822,14 @@ def save_prelaunch_url():
     if value:
         save_env_value(REPO_ROOT / ".env.local", "BRANDING_LOGIN_URL", value)
     return profile_redirect(selected_profile())
+
+
+@app.post("/manifest/load")
+def load_manifest():
+    profile = selected_profile()
+    thread = threading.Thread(target=load_capture_manifest, args=(profile,), daemon=True)
+    thread.start()
+    return profile_redirect(profile)
 
 
 @app.post("/guide/<profile>")

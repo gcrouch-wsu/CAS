@@ -1,331 +1,105 @@
-# Next Build: Branding Integration Plan
+# Next Build: CAS Branding & Capture Integration
 
-## Goal
+This document reflects what is implemented today, the intended coordinator workflow, review findings, and recommended follow-up work.
 
-Extend this app so an academic coordinator can see the **student-facing branding HTML as it appears to the applicant**, alongside the existing CAS flattened export data already shown in the app.
+## Guiding Principle
 
-This needs to work for at least:
+Vercel decides what needs to be captured from the merged publication data and capture manifest. The local app runs browser automation because WebAdMIT requires an interactive login/session. Serverless routes are not a substitute for that.
 
-- GradCAS
-- EngineeringCAS
+## Proposed Workflow
 
-The app already supports uploading and merging workbook exports from multiple CAS instances. The branding workflow should follow the same merged model.
+1. In Vercel admin, upload or merge the latest CAS Excel exports.
+2. Import or adjust the admin settings JSON if needed.
+3. Save the publication.
+4. Saving writes the public publication blob and the capture manifest to Vercel Blob at `cas-branding-capture/current.json`.
+5. Admin shows branding status for GradCAS and EngineeringCAS: `current`, `stale`, `missing`, or `not applicable`.
+6. Open the local Flask branding capture app at `http://127.0.0.1:5050`.
+7. In the local app, click `Load latest publication from Vercel`.
+8. Confirm the manifest shows the expected publication title/slug and Program ID counts per profile.
+9. Select the profile that is stale or missing.
+10. Run guided login if needed.
+11. In Edge, log in, navigate to CAS Configuration Portal, choose the correct CAS/cycle, open branding for a few programs, then close Edge.
+12. Back in the local app, click `Capture and upload`.
+13. The local app uses manifest Program IDs when the manifest is loaded and lists IDs for that profile; otherwise it falls back to the selected Excel report.
+14. Capture runs visibly in Edge, saves a local snapshot, then uploads to Vercel Blob.
+15. Refresh Vercel admin to confirm the profile status.
+16. Refresh the public page to confirm student-facing branding appears.
 
-## Core Requirement
+## Implemented
 
-The coordinator must be able to see the **branding content itself**, not just extracted text fields.
+| Area | Status |
+|------|--------|
+| Per-offering branding in publication data | Implemented in `src/lib/types.ts` |
+| Merge branding from Blob/local snapshots by Program ID | Implemented in `src/lib/branding-store.ts` |
+| Public page shows branding with merged data | Implemented via `getPublicationBySlug` |
+| Named profiles `gradcas`, `engineeringcas` | Implemented |
+| Shared GradCAS/EngineeringCAS inference | Implemented in `src/lib/cas-profile.ts` |
+| Local Node CLI + Flask app for guided login/capture/upload | Implemented in `tools/branding/` and `tools/branding_flask/app.py` |
+| Capture manifest written on create/update/merge | Implemented in `src/lib/cas-store.ts` |
+| Flask loads manifest from Blob | Implemented via `tools/branding/read-capture-manifest.mjs` |
+| Admin branding coverage, manifest pointer, local app link | Implemented in admin page and branding route |
 
-That means the app should preserve and render:
+## Current Architecture
 
-- the branding header image/background image
-- deadline/header text
-- instructions / rich HTML body
-- student-facing links embedded in the HTML
+Publications are stored at `cas-publications/{slug}.json` in Vercel Blob. The public home page uses `cas-publications/_current-view.json`.
 
-The coordinator view should be as close as practical to the branding page a student sees, while still fitting inside this app.
+The capture manifest is stored at `cas-branding-capture/current.json`. It is overwritten on publication create, update, or merge. It includes `publicationSlug`, `publicationTitle`, `publicationUpdatedAt`, `generatedAt`, and profile entries containing Program IDs, expected Excel names, labels, and latest snapshot metadata.
 
-## Current State
+Branding snapshots and latest profile pointers live under `cas-branding-snapshots/`. The deployed app merges latest completed branding into publication data when serving.
 
-### What the app already does well
+The local Flask app loads environment values from `.env.local` and `.env.branding`, including `BLOB_READ_WRITE_TOKEN`, optional `CAS_BLOB_ACCESS`, and `BRANDING_LOGIN_URL`. Capture prefers manifest Program IDs when loaded; otherwise it uses the selected Excel report.
 
-The app already ingests workbook exports and renders, per grouped program:
+## Review Findings
 
-- summary data
-- application windows
-- recommendations
-- questions
-- answers
-- documents
+### High: Global Manifest Path
 
-The grouping model already preserves `Program ID` at the offering level, which is the key needed to join branding data.
+The manifest is always `cas-branding-capture/current.json`. Last save wins across all publications. If multiple publications become active, the safer future design is a per-publication manifest path or a Flask-side slug verification step before capture.
 
-### What is missing
+Mitigation today: save the publication you are about to capture immediately before loading the manifest in the local app.
 
-The current internal model does **not** include per-program/per-offering branding.
+### Medium: Stale After Settings-Only Saves
 
-Branding currently exists outside the app:
+Admin status now separates missing Program IDs from timestamp-only stale status.
 
-- in the Liaison Configuration Portal
-- partially collectible through the Playwright scraper
+`missing` means expected Program IDs do not have capture records. `stale` means all expected Program IDs have captures, but the latest completed branding snapshot predates the latest publication save.
 
-### What we learned from the scraper
+This means a harmless settings-only save can still show `stale`, but the UI now explains that all IDs are present and the snapshot simply predates the latest publication save.
 
-- `Program ID` is the correct join key between workbook/export data and branding pages.
-- GradCAS and EngineeringCAS likely require **separate collection contexts**.
-- The recorded click trail did not capture enough portal context; simple top-level URL recording is not sufficient.
-- The scraper can capture useful branding HTML when the page is fully loaded.
+### Medium: Captured Count vs Offerings With Branding
 
-## Target Architecture
+Per-profile captured counts use any stored branding record, including error or empty-shell records. The summary branded-offerings count only includes `branding.status === "ok"`.
 
-### 1. Branding should be versioned as snapshots
+Improvement: rename or split the metric later into `IDs with any capture` and `IDs with OK branding`.
 
-Add timestamped branding snapshot folders, for example:
+### Medium: Server-Side Branding Actions Still Exist
 
-```text
-branding-snapshots/
-  2026-04-19T10-15-00Z/
-    manifest.json
-    profiles/
-      gradcas/
-        programs/
-          547733.json
-      engineeringcas/
-        programs/
-          600001.json
-  latest.json
-```
+The admin page now points users to the local app, but the old `POST /api/admin/publications/[slug]/branding` guide/export actions still exist and hidden buttons still call `runBrandingAction`.
 
-`latest.json` should point to the most recent successful snapshot the app should use by default.
+Improvement: remove these controls or gate them to local development once the Flask-only workflow is fully proven.
 
-### 2. Separate named collection profiles
+### Low: Blob Access Mode Alignment
 
-Add named branding collection profiles, at minimum:
+The app and local manifest reader both use the same `CAS_BLOB_ACCESS` rule: private unless `CAS_BLOB_ACCESS=public`. Local `.env` should match production.
 
-- `gradcas`
-- `engineeringcas`
+### Low: Blob Token Assumption
 
-Each profile should maintain its own:
+`readBlobJson` in `branding-store.ts` relies on `@vercel/blob` reading `BLOB_READ_WRITE_TOKEN` from the environment. Verify this SDK behavior or add explicit token passing later if needed.
 
-- auth state
-- recorded context/navigation state
-- run history
+### Low: Flask Delay Input
 
-Examples:
+`delay_ms` parsing can throw on invalid form input. This is low risk with the current form.
 
-```text
-tools/branding/.auth/gradcas-user.json
-tools/branding/.auth/gradcas-context.json
-tools/branding/.auth/engineeringcas-user.json
-tools/branding/.auth/engineeringcas-context.json
-```
+## Recommended Next Steps
 
-This is necessary because the collector likely has to enter different CAS/cycle contexts before branding pages work correctly.
-
-### 3. Branding should join on Program ID
-
-Branding must attach to the app’s **offering/program ID level**, not only to the broader grouped program.
-
-Reason:
-
-- one displayed program group can contain multiple `Program ID`s
-- term/cycle offerings can differ
-- branding may differ per `Program ID`
-
-So branding should be modeled per offering first, then optionally collapsed in the UI if multiple offerings share identical branding.
-
-## Data Model Changes Needed
-
-### Add branding to offerings
-
-Likely new type shape:
-
-```ts
-type ProgramBranding = {
-  programId: string;
-  sourceProfile: "gradcas" | "engineeringcas" | string;
-  capturedAt: string;
-  status: "ok" | "empty_shell" | "error";
-  studentFacingTitle: string;
-  deadlineText: string;
-  headerImageUrl: string | null;
-  instructionsHtml: string;
-  instructionsText: string;
-  links: { text: string; href: string }[];
-};
-```
-
-Then extend `CasOffering` or related publication data to include:
-
-```ts
-branding?: ProgramBranding | null
-```
-
-This is better than storing branding only on `CasProgramGroup`.
-
-### Add branding snapshot metadata
-
-The publication should also know which branding snapshot it is using, for example:
-
-- snapshot id
-- snapshot timestamp
-- number of offerings with branding
-- number of failed / missing offerings
-
-## Collector Changes Needed
-
-### 1. Make context capture profile-aware
-
-The collector needs to support:
-
-```text
-branding:login --profile gradcas
-branding:login --profile engineeringcas
-branding:collect --profile gradcas
-branding:collect --profile engineeringcas
-```
-
-Each profile needs isolated saved state.
-
-### 2. Record richer portal context
-
-The current recorder only captured the WebAdMIT login URL. That is not enough.
-
-We need to capture:
-
-- meaningful clicks
-- hash-route changes
-- possibly selected CAS/cycle labels
-- enough state to re-enter the correct portal context before visiting branding pages
-
-Simple top-level navigation recording is insufficient for this portal.
-
-### 3. Continue on empty shell, do not stop the batch
-
-The collector should:
-
-1. detect empty shell pages
-2. save HTML/screenshot anyway
-3. mark the program as `empty_shell`
-4. retry once after re-establishing context
-5. continue to the next program
-
-This should produce a complete manifest of:
-
-- successes
-- empty shells
-- hard failures
-
-### 4. Normalize scraper output into app-ready JSON
-
-Do not make the app consume raw ad hoc scraper output directly.
-
-Instead, normalize each collected page into a stable JSON schema per `Program ID`.
-
-## App Changes Needed
-
-### 1. Add a branding preview section in the coordinator view
-
-For each selected program/offering, show a new section such as:
-
-- `Student-facing branding preview`
-
-It should render:
-
-- the branding image/header
-- deadline text
-- instructions HTML
-
-This preview should sit alongside the existing flattened export content.
-
-### 2. Render the branding HTML as HTML
-
-This is critical.
-
-The coordinator must see the HTML branding **as shown to the student**, not as plain text only.
-
-That means:
-
-- preserve the original HTML body from the collector
-- sanitize it server-side before rendering
-- render it with `dangerouslySetInnerHTML` only after sanitization
-
-A sanitizer is required because this HTML is external content.
-
-Likely need:
-
-- `sanitize-html` or similar
-
-The rendered preview should preserve:
-
-- paragraphs
-- bold/italic
-- lists
-- links
-- line breaks
-
-### 3. Show per-offering differences clearly
-
-If multiple `Program ID`s in the same program group have different branding:
-
-- show them as separate branding previews aligned with each application window / offering
-
-If multiple offerings share identical branding:
-
-- optionally collapse them into one shared preview block
-
-This should mirror the app’s current behavior for term-specific questions/documents.
-
-### 4. Add branding status to admin
-
-Add a branding section to the admin page that shows:
-
-- current snapshot in use
-- branding coverage counts
-- missing branding count
-- failed/empty-shell count
-- last sync time
-
-Eventually add actions like:
-
-- `Connect GradCAS branding`
-- `Connect EngineeringCAS branding`
-- `Sync branding`
-- `Retry failed`
-- `Use latest snapshot`
-
-## Suggested Storage/Runtime Approach
-
-### Short term
-
-Keep the collector as a local Node/Playwright process and write branding snapshots to local disk.
-
-Then have the app read the latest snapshot locally.
-
-This is the fastest path to working software.
-
-### Longer term
-
-Move snapshot storage to a shared store the app can read in production, for example:
-
-- Blob storage
-- checked-in JSON only if very small and intentionally versioned
-- another secure storage layer
-
-Playwright/browser automation itself is probably better as:
-
-- a local admin-run task
-- or a separate Node worker
-
-not as a standard Vercel/serverless route.
-
-## Recommended Implementation Order
-
-1. Add branding types to the app model, keyed by `Program ID`.
-2. Add a normalized snapshot format and `latest.json` pointer.
-3. Make the collector support named profiles: `gradcas`, `engineeringcas`.
-4. Improve context recording so profile capture actually follows the needed portal path.
-5. Add empty-shell retry-and-continue behavior.
-6. Add an importer/loader that merges branding snapshots into publication data by `Program ID`.
-7. Add coordinator-facing branding preview UI.
-8. Sanitize and render branding HTML faithfully.
-9. Add admin branding status and sync controls.
+1. Add per-publication manifest paths or Flask slug verification if multiple active publications become real.
+2. Align per-profile metrics with OK branding vs any capture, or rename the labels.
+3. Remove or dev-gate the hidden server-side capture controls after the local manifest workflow is proven.
+4. Confirm `@vercel/blob` token behavior in `readBlobJson` and add explicit token passing if needed.
 
 ## Acceptance Criteria
 
-This build is successful when:
-
-1. A coordinator uploads/merges GradCAS and EngineeringCAS workbook exports as they do now.
-2. Branding is collected separately for GradCAS and EngineeringCAS.
-3. The app merges branding by `Program ID`.
-4. The coordinator can open a program in the app and see:
-   - the current flattened export data
-   - the student-facing branding preview
-5. The preview preserves the original HTML structure in a safe sanitized form.
-6. Missing branding does not break the app; it is shown as missing with status.
-7. The app can use the latest successful branding snapshot automatically.
-
-## Most Important Constraint
-
-Do not reduce the branding to plain text only.
-
-The core requirement is that the coordinator sees the **HTML branding as it is shown to the student**. That should drive both the snapshot schema and the eventual UI design.
+1. Upload/merge plus save on Vercel produces a manifest listing the Program IDs the public site expects per profile.
+2. Local Flask can load that manifest and capture those IDs, or fall back to Excel when manifest IDs are absent.
+3. Upload updates Blob so the deployed app shows merged branding on refresh.
+4. Admin status is actionable and distinguishes missing IDs from stale snapshot timestamps.
+5. HTML branding remains visible to students and coordinators as sanitized HTML, not plain text only.

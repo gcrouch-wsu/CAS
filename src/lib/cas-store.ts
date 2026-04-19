@@ -6,7 +6,11 @@ import type {
   TermFieldSetting,
 } from "./types";
 import { getBlobAccessMode } from "./blob-access";
-import { mergeLatestBrandingIntoPublicationData } from "./branding-store";
+import {
+  getLatestCompletedSnapshotForProfile,
+  mergeLatestBrandingIntoPublicationData,
+} from "./branding-store";
+import { inferCasProfile } from "./cas-profile";
 import {
   DEFAULT_PUBLIC_HEADER_SUBTITLE,
   DEFAULT_PUBLIC_HEADER_TITLE,
@@ -30,7 +34,26 @@ import {
 
 const BLOB_PREFIX = "cas-publications";
 const CURRENT_VIEW_PATHNAME = `${BLOB_PREFIX}/_current-view.json`;
+const CAPTURE_MANIFEST_PATHNAME = "cas-branding-capture/current.json";
 const DEFAULT_BRANDING_PROFILES = ["gradcas", "engineeringcas"];
+
+type BrandingCaptureProfileManifest = {
+  profile: string;
+  label: string;
+  expectedExcelName: string;
+  programIds: string[];
+  latestSnapshotId: string | null;
+  latestSnapshotCompletedAt: string | null;
+};
+
+type BrandingCaptureManifest = {
+  version: 1;
+  publicationSlug: string;
+  publicationTitle: string;
+  publicationUpdatedAt: string;
+  generatedAt: string;
+  profiles: Record<string, BrandingCaptureProfileManifest>;
+};
 
 /** Stored as one JSON file per publication in Vercel Blob. */
 export type StoredPublicationBlob = {
@@ -201,6 +224,71 @@ async function persistCurrentView(slug: string): Promise<void> {
     updated_at: new Date().toISOString(),
   };
   await put(CURRENT_VIEW_PATHNAME, JSON.stringify(body), {
+    access: getBlobAccessMode(),
+    token,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
+  });
+}
+
+async function buildBrandingCaptureManifest(body: StoredPublicationBlob): Promise<BrandingCaptureManifest> {
+  const profiles: Record<string, BrandingCaptureProfileManifest> = {
+    gradcas: {
+      profile: "gradcas",
+      label: "GradCAS",
+      expectedExcelName: "GradCAS.xlsx",
+      programIds: [],
+      latestSnapshotId: null,
+      latestSnapshotCompletedAt: null,
+    },
+    engineeringcas: {
+      profile: "engineeringcas",
+      label: "EngineeringCAS",
+      expectedExcelName: "EngCAS.xlsx",
+      programIds: [],
+      latestSnapshotId: null,
+      latestSnapshotCompletedAt: null,
+    },
+  };
+  const seen = {
+    gradcas: new Set<string>(),
+    engineeringcas: new Set<string>(),
+  };
+  for (const group of body.data.groups) {
+    for (const offering of group.offerings) {
+      const programId = offering.programId.trim();
+      if (!programId) continue;
+      const profile = inferCasProfile({
+        programId,
+        sourceProfile: offering.sourceProfile,
+        sourceFileName: body.data.sourceFileName,
+      });
+      if (seen[profile].has(programId)) continue;
+      seen[profile].add(programId);
+      profiles[profile].programIds.push(programId);
+    }
+  }
+  for (const profile of Object.keys(profiles)) {
+    profiles[profile].programIds.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const latest = await getLatestCompletedSnapshotForProfile(profile);
+    profiles[profile].latestSnapshotId = latest?.snapshotId ?? null;
+    profiles[profile].latestSnapshotCompletedAt = latest?.completedAt ?? null;
+  }
+  return {
+    version: 1,
+    publicationSlug: body.slug,
+    publicationTitle: body.title,
+    publicationUpdatedAt: body.updated_at,
+    generatedAt: new Date().toISOString(),
+    profiles,
+  };
+}
+
+async function persistBrandingCaptureManifest(body: StoredPublicationBlob): Promise<void> {
+  const token = requireBlobToken();
+  const manifest = await buildBrandingCaptureManifest(body);
+  await put(CAPTURE_MANIFEST_PATHNAME, JSON.stringify(manifest, null, 2), {
     access: getBlobAccessMode(),
     token,
     addRandomSuffix: false,
@@ -400,6 +488,7 @@ export async function createPublication(input: {
   };
   await persistBlob(body);
   await persistCurrentView(input.slug);
+  await persistBrandingCaptureManifest(body);
 }
 
 function validateSubset(keys: string[] | undefined, allowed: Set<string>): string[] {
@@ -553,6 +642,7 @@ export async function updatePublication(
   };
   await persistBlob(body);
   await persistCurrentView(existing.slug);
+  await persistBrandingCaptureManifest(body);
   return getPublicationBySlug(slug);
 }
 
@@ -632,5 +722,6 @@ export async function mergePublicationFromUpload(
   };
   await persistBlob(body);
   await persistCurrentView(existing.slug);
+  await persistBrandingCaptureManifest(body);
   return getPublicationBySlug(slug);
 }
