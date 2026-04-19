@@ -28,6 +28,98 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function valueLooksLikeHtml(s: string): boolean {
+  const t = s.trim();
+  return /<[a-z][\s\S]*?>/i.test(t) && t.includes("<");
+}
+
+/** Heuristic: Word/Teams/editor paste noise, not just “has a tag”. */
+function messyPasteHtmlLikely(s: string): boolean {
+  const low = s.toLowerCase();
+  if (low.includes("startfragment") || low.includes("endfragment")) return true;
+  if (low.includes("ui-provider")) return true;
+  if (low.includes("mso-") || low.includes("xmlns:o")) return true;
+  if (/class\s*=\s*"[^"]{160,}"/.test(s)) return true;
+  if (low.includes("fui-link") || /\b___[a-z0-9]{6,}\b/i.test(s)) return true;
+  return false;
+}
+
+/** Single shared recommendation row: Evaluation type → Max → Min → Minimum required (then any extras). */
+function orderedRecommendationEntries(rec: Record<string, string>): {
+  key: string;
+  value: string;
+  label: string;
+}[] {
+  const entries = Object.entries(rec);
+  const used = new Set<string>();
+  const out: { key: string; value: string; label: string }[] = [];
+
+  const take = (pred: (k: string) => boolean, label: string) => {
+    const hit = entries.find(([k]) => !used.has(k) && pred(k));
+    if (hit) {
+      used.add(hit[0]);
+      out.push({ key: hit[0], value: hit[1], label });
+    }
+  };
+
+  take((k) => k.trim().toLowerCase() === "evaluation type", "Evaluation type");
+  take((k) => k.trim().toLowerCase() === "max", "Max");
+  take((k) => k.trim().toLowerCase() === "min", "Min");
+  take((k) => /minimum\s+required/i.test(k), "Min. required for submission");
+
+  for (const [k, v] of entries) {
+    if (!used.has(k)) out.push({ key: k, value: v, label: k });
+  }
+  return out;
+}
+
+function StackedFieldRow({
+  fieldKey,
+  raw,
+  labelClassName,
+}: {
+  fieldKey: string;
+  raw: string;
+  labelClassName: string;
+}) {
+  const isQuestion = fieldKey.trim().toLowerCase() === "question";
+  const asHtml = valueLooksLikeHtml(raw);
+  const messy = asHtml && messyPasteHtmlLikely(raw);
+  const safeHtml = asHtml ? sanitizeBrandingHtml(raw) : "";
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <dt className={labelClassName}>{fieldKey}</dt>
+        {isQuestion && messy ? (
+          <span
+            className="max-w-[min(100%,22rem)] shrink-0 rounded-md border border-amber-400 bg-amber-50 px-2 py-1.5 text-left text-xs font-semibold leading-snug text-amber-950"
+            title="Heavy formatting from paste or the editor"
+          >
+            Pasted/complex formatting — clean up the source in the CAS Configuration Portal
+          </span>
+        ) : null}
+      </div>
+      <dd
+        className={`mt-1.5 text-wsu-gray-dark ${
+          isQuestion
+            ? "text-base font-medium leading-relaxed"
+            : "text-sm leading-relaxed"
+        } ${asHtml ? "" : "whitespace-pre-wrap"}`}
+      >
+        {asHtml ? (
+          <div
+            className="max-w-none whitespace-normal [&_a]:text-wsu-crimson [&_a]:underline [&_li]:ml-5 [&_li]:list-disc [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-2 [&_strong]:text-wsu-gray-dark [&_ul]:mb-2"
+            dangerouslySetInnerHTML={{ __html: safeHtml }}
+          />
+        ) : (
+          raw || "—"
+        )}
+      </dd>
+    </div>
+  );
+}
+
 /** Higher score = better match for search ordering and auto-selection. */
 function rankGroupForQuery(g: PublicProgramGroup, ql: string): number {
   const name = g.displayName.toLowerCase();
@@ -536,7 +628,15 @@ function ProgramDetail({
       info.deadlineDiffers || info.linkDiffers || info.differingInstructionLines.size > 0
   );
   const brandingCardCount = group.offerings.filter((o) => o.branding).length;
-  const brandingTwoColumn = brandingCardCount === 2;
+  /** Side-by-side only when offerings list length matches branded count (no extra unbranded rows). */
+  const brandingTwoColumn = brandingCardCount === 2 && group.offerings.length === 2;
+  /** First row: two terms; second row: one term, same width as a single column. */
+  const brandingThreeTile =
+    brandingCardCount === 3 && group.offerings.length === 3;
+  const brandingGrid =
+    brandingTwoColumn || brandingThreeTile
+      ? "grid gap-4 lg:grid-cols-2 lg:items-stretch"
+      : "space-y-4";
 
   return (
     <article className="space-y-10 rounded-xl border border-wsu-gray/10 bg-white p-6 shadow-sm">
@@ -611,6 +711,12 @@ function ProgramDetail({
                   <span className="font-semibold">gold left bar</span> differ from the other
                   window.
                 </>
+              ) : brandingThreeTile ? (
+                <>
+                  Branding differs between these application windows. Compare the grid below.
+                  Paragraphs with a <span className="font-semibold">gold left bar</span> differ
+                  from other windows.
+                </>
               ) : (
                 <>
                   Branding differs between application windows. Paragraphs with a{" "}
@@ -620,22 +726,32 @@ function ProgramDetail({
               )}
             </p>
           ) : null}
-          <div
-            className={
-              brandingTwoColumn
-                ? "grid gap-4 lg:grid-cols-2 lg:items-start"
-                : "space-y-4"
-            }
-          >
-            {group.offerings.map((o) => (
-              <BrandingPreviewCard
-                key={`branding-${o.programId}`}
-                offering={o}
-                termFieldSettings={termFieldSettings}
-                showProgramIdOnPublic={showProgramIdOnPublic}
-                brandingDifference={brandingDiffersByProgramId.get(o.programId)}
-              />
-            ))}
+          <div className={brandingGrid}>
+            {group.offerings.map((o, index) => {
+              const card = (
+                <BrandingPreviewCard
+                  key={`branding-${o.programId}`}
+                  offering={o}
+                  termFieldSettings={termFieldSettings}
+                  showProgramIdOnPublic={showProgramIdOnPublic}
+                  brandingDifference={brandingDiffersByProgramId.get(o.programId)}
+                  fillGridCell={brandingTwoColumn || brandingThreeTile}
+                />
+              );
+              if (brandingThreeTile && index === 2) {
+                return (
+                  <div
+                    key={`branding-wrap-${o.programId}`}
+                    className="flex justify-center lg:col-span-2"
+                  >
+                    <div className="w-full lg:max-w-[calc(50%-0.5rem)] lg:justify-self-center">
+                      {card}
+                    </div>
+                  </div>
+                );
+              }
+              return card;
+            })}
           </div>
         </section>
       )}
@@ -684,11 +800,16 @@ function ProgramDetail({
             })}
           </div>
         ) : group.recommendations && Object.keys(group.recommendations).length > 0 ? (
-          <dl className="grid gap-3 sm:grid-cols-2">
-            {Object.entries(group.recommendations).map(([k, v]) => (
-              <div key={k} className="rounded-lg border border-wsu-gray/10 px-3 py-2">
-                <dt className="text-xs font-medium text-wsu-gray">{k}</dt>
-                <dd className="mt-1 text-sm text-wsu-gray-dark">{v || "—"}</dd>
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {orderedRecommendationEntries(group.recommendations).map(({ key, value, label }) => (
+              <div
+                key={key}
+                className="min-w-0 rounded-lg border border-wsu-gray/10 bg-wsu-cream/25 px-3 py-2"
+              >
+                <dt className="text-xs font-medium text-wsu-gray" title={key !== label ? key : undefined}>
+                  {label}
+                </dt>
+                <dd className="mt-1 break-words text-sm text-wsu-gray-dark">{value || "—"}</dd>
               </div>
             ))}
           </dl>
@@ -737,17 +858,26 @@ function BrandingPreviewCard({
   termFieldSettings,
   showProgramIdOnPublic,
   brandingDifference,
+  fillGridCell,
 }: {
   offering: CasOffering;
   termFieldSettings: TermFieldSetting[];
   showProgramIdOnPublic: boolean;
   brandingDifference?: BrandingDifferenceInfo;
+  /** When true, card fills grid cell (equal width/height with siblings on large screens). */
+  fillGridCell?: boolean;
 }) {
   const branding = offering.branding;
   const titleLine = applicationWindowCardTitle(offering, termFieldSettings);
+  const gridShell =
+    fillGridCell === true
+      ? "flex h-full min-h-0 w-full max-w-none flex-col overflow-hidden"
+      : "max-w-[800px]";
   if (!branding) {
     return (
-      <div className="rounded-lg border border-dashed border-wsu-gray/20 bg-wsu-cream/20 px-4 py-4">
+      <div
+        className={`rounded-lg border border-dashed border-wsu-gray/20 bg-wsu-cream/20 px-4 py-4 ${gridShell}`}
+      >
         <p className="text-sm font-semibold text-wsu-gray-dark">{titleLine}</p>
         {showProgramIdOnPublic ? (
           <p className="mt-1 text-xs text-wsu-gray">Program ID: {offering.programId}</p>
@@ -772,7 +902,9 @@ function BrandingPreviewCard({
   ].filter(Boolean);
 
   return (
-    <div className="max-w-[800px] overflow-hidden rounded-lg border border-wsu-gray/10 bg-white shadow-sm">
+    <div
+      className={`${gridShell} overflow-hidden rounded-lg border border-wsu-gray/10 bg-white shadow-sm`}
+    >
       <div className="border-b border-wsu-gray/10 bg-wsu-cream/40 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-base font-semibold text-wsu-gray-dark">{titleLine}</p>
@@ -833,7 +965,9 @@ function BrandingPreviewCard({
           ) : null}
         </div>
       </div>
-      <div className="space-y-4 px-4 py-4">
+      <div
+        className={`space-y-4 px-4 py-4 ${fillGridCell ? "min-h-0 flex-1 overflow-auto" : ""}`}
+      >
         {hasHtml ? (
           <div
             className="max-w-none whitespace-normal text-sm leading-relaxed text-wsu-gray-dark [&_a]:text-wsu-crimson [&_a]:underline [&_a]:decoration-wsu-crimson/30 [&_li]:ml-5 [&_li]:list-disc [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_ul]:mb-3"
@@ -965,22 +1099,13 @@ function TableFromRecords({
       <dl className="space-y-3">
         {innerKeys.map((k) => {
           const raw = getRecordValueCi(r, k) ?? "";
-          const isQuestion = k.trim().toLowerCase() === "question";
           return (
-            <div key={k}>
-              <dt className="text-[11px] font-semibold uppercase tracking-wide text-wsu-crimson">
-                {k}
-              </dt>
-              <dd
-                className={`mt-1 whitespace-pre-wrap text-wsu-gray-dark ${
-                  isQuestion
-                    ? "text-base font-medium leading-relaxed text-wsu-gray-dark"
-                    : "text-sm leading-relaxed"
-                }`}
-              >
-                {raw || "—"}
-              </dd>
-            </div>
+            <StackedFieldRow
+              key={k}
+              fieldKey={k}
+              raw={raw}
+              labelClassName="text-[11px] font-semibold uppercase tracking-wide text-wsu-crimson"
+            />
           );
         })}
       </dl>
@@ -1023,22 +1148,13 @@ function TableFromRecords({
             <dl className="space-y-4">
               {stackedKeys.map((k) => {
                 const raw = getRecordValueCi(r, k) ?? "";
-                const isQuestion = k.trim().toLowerCase() === "question";
                 return (
-                  <div key={k}>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-wsu-crimson">
-                      {k}
-                    </dt>
-                    <dd
-                      className={`mt-1.5 whitespace-pre-wrap text-wsu-gray-dark ${
-                        isQuestion
-                          ? "text-base font-medium leading-relaxed text-wsu-gray-dark"
-                          : "text-sm leading-relaxed"
-                      }`}
-                    >
-                      {raw || "—"}
-                    </dd>
-                  </div>
+                  <StackedFieldRow
+                    key={k}
+                    fieldKey={k}
+                    raw={raw}
+                    labelClassName="text-xs font-semibold uppercase tracking-wide text-wsu-crimson"
+                  />
                 );
               })}
             </dl>
