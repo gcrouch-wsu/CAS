@@ -280,39 +280,25 @@ function normalizeForComparison(value: string | null | undefined): string {
     .toLowerCase();
 }
 
-function brandingFingerprint(branding: ProgramBranding | null | undefined): string {
-  if (!branding) return "missing";
-  return JSON.stringify({
-    status: branding.status,
-    title: normalizeForComparison(branding.studentFacingTitle),
-    deadline: normalizeForComparison(branding.deadlineText),
-    image: normalizeForComparison(branding.headerImageUrl),
-    html: normalizeForComparison(branding.instructionsHtml || branding.instructionsText),
-    links: branding.links.map((link) => ({
-      text: normalizeForComparison(link.text),
-      href: normalizeForComparison(link.href),
-    })),
-  });
-}
-
-type BrandingDifferenceField = "status" | "title" | "deadline" | "image" | "instructions" | "links";
-
 type BrandingDifferenceInfo = {
-  differsFromBaseline: boolean;
-  fields: Set<BrandingDifferenceField>;
+  deadlineDiffers: boolean;
+  linkDiffers: boolean;
+  instructionBlockIndexes: Set<number>;
 };
 
-function brandingFieldValue(
-  branding: ProgramBranding,
-  field: BrandingDifferenceField
-): string {
-  if (field === "status") return branding.status;
-  if (field === "title") return normalizeForComparison(branding.studentFacingTitle);
-  if (field === "deadline") return normalizeForComparison(branding.deadlineText);
-  if (field === "image") return normalizeForComparison(branding.headerImageUrl);
-  if (field === "instructions") {
-    return normalizeForComparison(branding.instructionsHtml || branding.instructionsText);
-  }
+const BRANDING_BLOCK_RE =
+  /<(p|li|h[1-6]|blockquote|div)(\s[^>]*)?>([\s\S]*?)<\/\1>/gi;
+const BRANDING_DIFF_CLASS = "rounded border-2 border-amber-300 bg-amber-50 px-2 py-1";
+
+function normalizeHtmlForComparison(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s+(?=>)/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function linksFingerprint(branding: ProgramBranding): string {
   return JSON.stringify(
     branding.links.map((link) => ({
       text: normalizeForComparison(link.text),
@@ -321,35 +307,76 @@ function brandingFieldValue(
   );
 }
 
+function instructionBlockFingerprints(branding: ProgramBranding): string[] {
+  const safeHtml = sanitizeBrandingHtml(branding.instructionsHtml);
+  const blocks: string[] = [];
+  safeHtml.replace(BRANDING_BLOCK_RE, (full, _tag, _attrs, inner) => {
+    if (normalizeForComparison(inner)) {
+      blocks.push(normalizeHtmlForComparison(full));
+    }
+    return full;
+  });
+  if (blocks.length > 0) return blocks;
+  const fallback = normalizeForComparison(branding.instructionsText || safeHtml);
+  return fallback ? [fallback] : [];
+}
+
+function withHighlightClass(openingTag: string): string {
+  if (/\sclass=/i.test(openingTag)) {
+    return openingTag.replace(/\sclass=(["'])(.*?)\1/i, (_match, quote, value) => {
+      return ` class=${quote}${value} ${BRANDING_DIFF_CLASS}${quote}`;
+    });
+  }
+  return openingTag.replace(/>$/, ` class="${BRANDING_DIFF_CLASS}">`);
+}
+
+function highlightInstructionBlocks(html: string, indexes: Set<number>): string {
+  if (indexes.size === 0) return html;
+  let index = -1;
+  let highlighted = false;
+  const next = html.replace(BRANDING_BLOCK_RE, (full, tag, attrs = "", inner) => {
+    if (!normalizeForComparison(inner)) return full;
+    index += 1;
+    if (!indexes.has(index)) return full;
+    highlighted = true;
+    const opening = withHighlightClass(`<${tag}${attrs}>`);
+    return `${opening}${inner}</${tag}>`;
+  });
+  return highlighted ? next : `<div class="${BRANDING_DIFF_CLASS}">${html}</div>`;
+}
+
 function brandingDifferenceMap(offerings: CasOffering[]): Map<string, BrandingDifferenceInfo> {
   const branded = offerings.filter((offering) => offering.branding);
-  const fingerprints = branded.map((offering) => brandingFingerprint(offering.branding));
-  const unique = new Set(fingerprints);
   const differs = new Map<string, BrandingDifferenceInfo>();
-  if (unique.size <= 1) return differs;
-  const counts = new Map<string, number>();
-  for (const fingerprint of fingerprints) {
-    counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
+  if (branded.length <= 1) return differs;
+  const deadlineDiffers =
+    new Set(
+      branded.map((offering) => normalizeForComparison(offering.branding?.deadlineText))
+    ).size > 1;
+  const linkDiffers =
+    new Set(
+      branded.map((offering) => (offering.branding ? linksFingerprint(offering.branding) : ""))
+    ).size > 1;
+  const instructionBlocksByProgram = new Map<string, string[]>();
+  let maxBlocks = 0;
+  for (const offering of branded) {
+    if (!offering.branding) continue;
+    const blocks = instructionBlockFingerprints(offering.branding);
+    instructionBlocksByProgram.set(offering.programId, blocks);
+    maxBlocks = Math.max(maxBlocks, blocks.length);
   }
-  const baseline = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const fields: BrandingDifferenceField[] = [
-    "status",
-    "title",
-    "deadline",
-    "image",
-    "instructions",
-    "links",
-  ];
-  const differingFields = fields.filter((field) => {
-    const values = branded.map((offering) =>
-      offering.branding ? brandingFieldValue(offering.branding, field) : "missing"
+  const differingInstructionIndexes = new Set<number>();
+  for (let index = 0; index < maxBlocks; index += 1) {
+    const values = branded.map(
+      (offering) => instructionBlocksByProgram.get(offering.programId)?.[index] ?? "__missing__"
     );
-    return new Set(values).size > 1;
-  });
+    if (new Set(values).size > 1) differingInstructionIndexes.add(index);
+  }
   for (const offering of branded) {
     differs.set(offering.programId, {
-      differsFromBaseline: brandingFingerprint(offering.branding) !== baseline,
-      fields: new Set(differingFields),
+      deadlineDiffers,
+      linkDiffers,
+      instructionBlockIndexes: differingInstructionIndexes,
     });
   }
   return differs;
@@ -411,7 +438,8 @@ function ProgramDetail({
     [group.offerings]
   );
   const hasBrandingDifferences = [...brandingDiffersByProgramId.values()].some(
-    (info) => info.fields.size > 0
+    (info) =>
+      info.deadlineDiffers || info.linkDiffers || info.instructionBlockIndexes.size > 0
   );
 
   return (
@@ -480,8 +508,8 @@ function ProgramDetail({
           </p>
           {hasBrandingDifferences ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
-              Branding differs between application windows. Differing fields are boxed on each
-              affected branding card.
+              Branding wording differs between application windows. Highlighted boxes show the
+              specific editable text, instructions, or links that differ.
             </p>
           ) : null}
           <div className="space-y-4">
@@ -603,8 +631,6 @@ function BrandingPreviewCard({
 }) {
   const branding = offering.branding;
   const titleLine = applicationWindowCardTitle(offering, termFieldSettings);
-  const brandingDiffers = brandingDifference?.differsFromBaseline === true;
-  const differingFields = brandingDifference?.fields ?? new Set<BrandingDifferenceField>();
   if (!branding) {
     return (
       <div className="rounded-lg border border-dashed border-wsu-gray/20 bg-wsu-cream/20 px-4 py-4">
@@ -620,39 +646,25 @@ function BrandingPreviewCard({
   const safeHtml = sanitizeBrandingHtml(branding.instructionsHtml);
   const emptyShell = branding.status === "empty_shell";
   const hasHtml = safeHtml.trim().length > 0;
-  const statusDiffers = differingFields.has("status");
-  const titleDiffers = differingFields.has("title");
-  const deadlineDiffers = differingFields.has("deadline");
-  const imageDiffers = differingFields.has("image");
-  const instructionsDiffers = differingFields.has("instructions");
-  const linksDiffers = differingFields.has("links");
+  const deadlineDiffers = brandingDifference?.deadlineDiffers === true;
+  const linksDiffers = brandingDifference?.linkDiffers === true;
+  const instructionBlockIndexes =
+    brandingDifference?.instructionBlockIndexes ?? new Set<number>();
+  const highlightedHtml = highlightInstructionBlocks(safeHtml, instructionBlockIndexes);
   const differenceLabels = [
-    statusDiffers ? "status" : "",
-    titleDiffers ? "title" : "",
     deadlineDiffers ? "deadline" : "",
-    imageDiffers ? "header image" : "",
-    instructionsDiffers ? "instructions" : "",
+    instructionBlockIndexes.size > 0 ? "instructions" : "",
     linksDiffers ? "links" : "",
   ].filter(Boolean);
 
   return (
-    <div
-      className={`max-w-[800px] overflow-hidden rounded-lg border bg-white shadow-sm ${
-        brandingDiffers ? "border-amber-300 ring-2 ring-amber-200" : "border-wsu-gray/10"
-      }`}
-    >
-      <div
-        className={`border-b px-4 py-3 ${
-          brandingDiffers
-            ? "border-amber-200 bg-amber-50"
-            : "border-wsu-gray/10 bg-wsu-cream/40"
-        }`}
-      >
+    <div className="max-w-[800px] overflow-hidden rounded-lg border border-wsu-gray/10 bg-white shadow-sm">
+      <div className="border-b border-wsu-gray/10 bg-wsu-cream/40 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-base font-semibold text-wsu-gray-dark">{titleLine}</p>
-          {brandingDiffers ? (
-            <span className="rounded-full bg-amber-200 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-950">
-              Different branding
+          {differenceLabels.length > 0 ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950">
+              Different text: {differenceLabels.join(", ")}
             </span>
           ) : null}
         </div>
@@ -662,9 +674,6 @@ function BrandingPreviewCard({
           <span>Captured: {new Date(branding.capturedAt).toLocaleString()}</span>
           <span
             className={`rounded-full px-2 py-0.5 font-semibold ${
-              statusDiffers
-                ? "bg-amber-200 text-amber-950 ring-2 ring-amber-300"
-                :
               branding.status === "ok"
                 ? "bg-emerald-100 text-emerald-800"
                 : branding.status === "empty_shell"
@@ -674,18 +683,9 @@ function BrandingPreviewCard({
           >
             {branding.status}
           </span>
-          {differenceLabels.length > 0 ? (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-950">
-              Different: {differenceLabels.join(", ")}
-            </span>
-          ) : null}
         </div>
       </div>
-      <div
-        className={`border-b bg-wsu-gray-dark ${
-          imageDiffers ? "border-amber-300 ring-2 ring-inset ring-amber-300" : "border-wsu-gray/10"
-        }`}
-      >
+      <div className="border-b border-wsu-gray/10 bg-wsu-gray-dark">
         <div className="relative overflow-hidden bg-wsu-gray-dark">
           {branding.headerImageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -700,9 +700,7 @@ function BrandingPreviewCard({
           {branding.studentFacingTitle || branding.deadlineText ? (
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-3 bg-black/75 px-4 py-3 text-white">
               <p
-                className={`min-w-0 flex-1 truncate text-sm font-semibold ${
-                  titleDiffers ? "rounded border border-amber-300 bg-amber-200/25 px-2 py-1" : ""
-                }`}
+                className="min-w-0 flex-1 truncate text-sm font-semibold"
               >
                 {branding.studentFacingTitle || "Student-facing branding"}
               </p>
@@ -724,10 +722,8 @@ function BrandingPreviewCard({
       <div className="space-y-4 px-4 py-4">
         {hasHtml ? (
           <div
-            className={`max-w-none whitespace-normal text-sm leading-relaxed text-wsu-gray-dark [&_a]:text-wsu-crimson [&_a]:underline [&_a]:decoration-wsu-crimson/30 [&_li]:ml-5 [&_li]:list-disc [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_ul]:mb-3 ${
-              instructionsDiffers ? "rounded-lg border-2 border-amber-300 bg-amber-50 p-3" : ""
-            }`}
-            dangerouslySetInnerHTML={{ __html: safeHtml }}
+            className="max-w-none whitespace-normal text-sm leading-relaxed text-wsu-gray-dark [&_a]:text-wsu-crimson [&_a]:underline [&_a]:decoration-wsu-crimson/30 [&_li]:ml-5 [&_li]:list-disc [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_ul]:mb-3"
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
         ) : emptyShell ? (
           <p className="text-sm text-amber-900">
