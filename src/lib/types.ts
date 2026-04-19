@@ -113,6 +113,8 @@ export interface PublicPublicationPayload {
 export interface PublicProgramGroup {
   groupKey: string;
   displayName: string;
+  /** From CAS "Department Name" when present; used for public program list grouping. */
+  departmentName?: string;
   visibleShared: Record<string, string>;
   offerings: CasOffering[];
   recommendations: Record<string, string> | null;

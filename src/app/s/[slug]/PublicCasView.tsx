@@ -49,23 +49,69 @@ function rankGroupForQuery(g: PublicProgramGroup, ql: string): number {
   return best;
 }
 
+const OTHER_DEPT_LABEL = "Other";
+
+/** Stable label for optgroup / sorting; uses CAS Department Name when present. */
+function departmentGroupLabel(g: PublicProgramGroup): string {
+  const d = g.departmentName?.trim();
+  return d || OTHER_DEPT_LABEL;
+}
+
 function sortGroupsForSearch(groups: PublicProgramGroup[], rawQuery: string): PublicProgramGroup[] {
   const ql = rawQuery.trim().toLowerCase();
+  const byDeptThenName = (a: PublicProgramGroup, b: PublicProgramGroup) => {
+    const da = departmentGroupLabel(a);
+    const db = departmentGroupLabel(b);
+    const c = da.localeCompare(db, undefined, { sensitivity: "base" });
+    if (c !== 0) {
+      if (da === OTHER_DEPT_LABEL) return 1;
+      if (db === OTHER_DEPT_LABEL) return -1;
+      return c;
+    }
+    return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+  };
   if (!ql) {
-    return [...groups].sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" })
-    );
+    return [...groups].sort(byDeptThenName);
   }
   return [...groups]
-    .filter(
-      (g) => g.displayName.toLowerCase().includes(ql) || g.groupKey.toLowerCase().includes(ql)
-    )
+    .filter((g) => {
+      if (g.displayName.toLowerCase().includes(ql) || g.groupKey.toLowerCase().includes(ql)) {
+        return true;
+      }
+      const dept = g.departmentName?.trim().toLowerCase();
+      return Boolean(dept && dept.includes(ql));
+    })
     .sort((a, b) => {
       const ra = rankGroupForQuery(a, ql);
       const rb = rankGroupForQuery(b, ql);
       if (rb !== ra) return rb - ra;
-      return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+      return byDeptThenName(a, b);
     });
+}
+
+/** Ordered optgroups: department A–Z, "Other" last; programs alpha within each. */
+function programsByDepartmentForSelect(groups: PublicProgramGroup[]) {
+  const map = new Map<string, PublicProgramGroup[]>();
+  for (const g of groups) {
+    const label = departmentGroupLabel(g);
+    const list = map.get(label) ?? [];
+    list.push(g);
+    map.set(label, list);
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" })
+    );
+  }
+  const labels = [...map.keys()].sort((a, b) => {
+    if (a === OTHER_DEPT_LABEL) return 1;
+    if (b === OTHER_DEPT_LABEL) return -1;
+    return a.localeCompare(b, undefined, { sensitivity: "base" });
+  });
+  return labels.map((label) => ({
+    label,
+    groups: map.get(label) ?? [],
+  }));
 }
 
 function pickGroup(
@@ -110,6 +156,16 @@ export default function PublicCasView({
     [initial.groups, query]
   );
 
+  const filteredByDepartment = useMemo(
+    () => programsByDepartmentForSelect(filtered),
+    [filtered]
+  );
+
+  const filteredFlat = useMemo(
+    () => filteredByDepartment.flatMap((section) => section.groups),
+    [filteredByDepartment]
+  );
+
   useEffect(() => {
     const ql = query.trim().toLowerCase();
     if (!ql) {
@@ -120,8 +176,8 @@ export default function PublicCasView({
       );
       return;
     }
-    setSelectedKey(filtered[0]?.groupKey ?? "");
-  }, [query, filtered, initial.groups]);
+    setSelectedKey(filteredFlat[0]?.groupKey ?? "");
+  }, [query, filteredFlat, initial.groups]);
 
   const selected = useMemo(
     () => pickGroup(initial.groups, selectedKey),
@@ -129,11 +185,11 @@ export default function PublicCasView({
   );
 
   const stepProgram = (delta: number) => {
-    if (filtered.length === 0) return;
-    const idx = filtered.findIndex((g) => g.groupKey === selectedKey);
+    if (filteredFlat.length === 0) return;
+    const idx = filteredFlat.findIndex((g) => g.groupKey === selectedKey);
     const base = idx < 0 ? 0 : idx;
-    const next = (base + delta + filtered.length) % filtered.length;
-    setSelectedKey(filtered[next].groupKey);
+    const next = (base + delta + filteredFlat.length) % filteredFlat.length;
+    setSelectedKey(filteredFlat[next].groupKey);
   };
 
   const showOrg =
@@ -173,16 +229,20 @@ export default function PublicCasView({
               onChange={(e) => setSelectedKey(e.target.value)}
               className="min-w-0 flex-1 rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base text-wsu-gray-dark shadow-sm focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
             >
-              {filtered.map((g) => (
-                <option key={g.groupKey} value={g.groupKey}>
-                  {g.displayName}
-                </option>
+              {filteredByDepartment.map((section) => (
+                <optgroup key={section.label} label={section.label}>
+                  {section.groups.map((g) => (
+                    <option key={g.groupKey} value={g.groupKey}>
+                      {g.displayName}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <button
               type="button"
               aria-label="Previous program"
-              disabled={filtered.length <= 1}
+              disabled={filteredFlat.length <= 1}
               onClick={() => stepProgram(-1)}
               className="shrink-0 rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base font-semibold leading-none text-wsu-gray-dark shadow-sm hover:bg-wsu-cream/50 disabled:pointer-events-none disabled:opacity-40 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
             >
@@ -191,7 +251,7 @@ export default function PublicCasView({
             <button
               type="button"
               aria-label="Next program"
-              disabled={filtered.length <= 1}
+              disabled={filteredFlat.length <= 1}
               onClick={() => stepProgram(1)}
               className="shrink-0 rounded-lg border border-wsu-gray/20 bg-white px-3 py-2.5 text-base font-semibold leading-none text-wsu-gray-dark shadow-sm hover:bg-wsu-cream/50 disabled:pointer-events-none disabled:opacity-40 focus:border-wsu-crimson focus:outline-none focus:ring-2 focus:ring-wsu-crimson/25"
             >
@@ -201,7 +261,7 @@ export default function PublicCasView({
         </label>
       </div>
 
-      {filtered.length === 0 ? (
+      {filteredFlat.length === 0 ? (
         <p className="rounded-lg border border-wsu-gray/15 bg-white px-4 py-6 text-wsu-gray">
           No programs match that search.
         </p>

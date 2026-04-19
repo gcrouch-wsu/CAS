@@ -297,6 +297,15 @@ async function persistBrandingCaptureManifest(body: StoredPublicationBlob): Prom
   });
 }
 
+function departmentNameFromShared(shared: Record<string, string>): string | undefined {
+  for (const [k, v] of Object.entries(shared)) {
+    if (k.trim().toLowerCase() !== "department name") continue;
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return undefined;
+}
+
 function mapToPublicGroup(
   g: StoredGroup,
   visibleColumnKeys: string[],
@@ -308,6 +317,7 @@ function mapToPublicGroup(
   return {
     groupKey: g.groupKey,
     displayName: cleanProgramDisplayName(g.displayName, programStripSuffixes),
+    departmentName: departmentNameFromShared(g.shared),
     visibleShared: pickVisibleShared(g.shared, visibleColumnKeys),
     offerings: g.offerings,
     recommendations: g.recommendations,
